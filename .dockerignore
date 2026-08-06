@@ -1,0 +1,13 @@
+node_modules
+.next
+.git
+data
+*.db
+*.db-*
+.env
+.env.*
+!.env.example
+AGENTS.md
+CLAUDE.md
+tsconfig.tsbuildinfo
+npm-debug.log*

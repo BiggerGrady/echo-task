@@ -43,7 +43,11 @@ cp .env.example .env.local
 
 ## 数据
 
-本地 SQLite 与文件保存在 `data/`：
+本地 SQLite 与文件保存在 `data/`（或通过 `DATA_ROOT` 指定，Fly 上为 `/data`）：
 
 - `echo.db`：设置、参考文档、Skill、任务元数据
 - `uploads/` / `outputs/` / `references/` / `skills/`
+
+## 公网部署
+
+见 [DEPLOY.md](./DEPLOY.md)。推荐 Fly.io（无需自备云服务器）。
