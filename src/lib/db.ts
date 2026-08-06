@@ -72,7 +72,17 @@ export type AppSettings = {
 };
 
 export const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
-export const DEEPSEEK_DEFAULT_MODEL = "deepseek-chat";
+export const DEEPSEEK_DEFAULT_MODEL = "deepseek-v4-flash";
+export const DEEPSEEK_SUPPORTED_MODELS = ["deepseek-v4-flash", "deepseek-v4-pro"] as const;
+
+function normalizeDeepseekModel(model: string | undefined): string {
+  if (model && (DEEPSEEK_SUPPORTED_MODELS as readonly string[]).includes(model)) {
+    return model;
+  }
+  return DEEPSEEK_DEFAULT_MODEL;
+}
+
+export { normalizeDeepseekModel };
 
 export const DEFAULT_SETTINGS: AppSettings = {
   provider: "deepseek",
@@ -90,10 +100,9 @@ function readEnvSettings(): Partial<AppSettings> {
     process.env.DEEPSEEK_BASE_URL?.trim() ||
     process.env.LLM_BASE_URL?.trim() ||
     DEEPSEEK_BASE_URL;
-  const model =
-    process.env.DEEPSEEK_MODEL?.trim() ||
-    process.env.LLM_MODEL?.trim() ||
-    DEEPSEEK_DEFAULT_MODEL;
+  const model = normalizeDeepseekModel(
+    process.env.DEEPSEEK_MODEL?.trim() || process.env.LLM_MODEL?.trim()
+  );
   const providerRaw = process.env.LLM_PROVIDER?.trim() as AppSettings["provider"] | undefined;
   const provider: AppSettings["provider"] | undefined =
     providerRaw && ["deepseek", "cursor-compatible", "openai", "demo"].includes(providerRaw)
@@ -118,31 +127,38 @@ export function getSettings(): AppSettings {
     | undefined;
 
   if (!row) {
-    return { ...DEFAULT_SETTINGS, ...fromEnv };
+    const merged = { ...DEFAULT_SETTINGS, ...fromEnv };
+    return { ...merged, model: normalizeDeepseekModel(merged.model) };
   }
 
   try {
     const saved = JSON.parse(row.value) as Partial<AppSettings>;
-    return {
+    const merged = {
       ...DEFAULT_SETTINGS,
       ...fromEnv,
       ...saved,
       // Prefer DB key when present; otherwise fall back to env (never commit secrets).
       apiKey: saved.apiKey?.trim() || fromEnv.apiKey || "",
     };
+    return { ...merged, model: normalizeDeepseekModel(merged.model) };
   } catch {
-    return { ...DEFAULT_SETTINGS, ...fromEnv };
+    const merged = { ...DEFAULT_SETTINGS, ...fromEnv };
+    return { ...merged, model: normalizeDeepseekModel(merged.model) };
   }
 }
 
 export function saveSettings(settings: AppSettings) {
   const database = getDb();
+  const normalized: AppSettings = {
+    ...settings,
+    model: normalizeDeepseekModel(settings.model),
+  };
   database
     .prepare(
       `INSERT INTO settings (key, value) VALUES (?, ?)
        ON CONFLICT(key) DO UPDATE SET value = excluded.value`
     )
-    .run("llm", JSON.stringify(settings));
+    .run("llm", JSON.stringify(normalized));
 }
 
 export function getSettingsPublic() {

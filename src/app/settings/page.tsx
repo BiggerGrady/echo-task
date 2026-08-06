@@ -13,9 +13,9 @@ type Settings = {
 };
 
 const PRESETS: Record<Settings["provider"], { baseUrl: string; model: string } | null> = {
-  deepseek: { baseUrl: "https://api.deepseek.com", model: "deepseek-chat" },
-  openai: { baseUrl: "https://api.openai.com/v1", model: "gpt-4o" },
-  "cursor-compatible": { baseUrl: "https://api.deepseek.com", model: "deepseek-chat" },
+  deepseek: { baseUrl: "https://api.deepseek.com", model: "deepseek-v4-flash" },
+  openai: { baseUrl: "https://api.deepseek.com", model: "deepseek-v4-flash" },
+  "cursor-compatible": { baseUrl: "https://api.deepseek.com", model: "deepseek-v4-flash" },
   demo: null,
 };
 
@@ -24,7 +24,7 @@ export default function SettingsPage() {
   const [form, setForm] = useState<Settings>({
     provider: "deepseek",
     baseUrl: "https://api.deepseek.com",
-    model: "deepseek-chat",
+    model: "deepseek-v4-flash",
     apiKey: "",
     hasApiKey: false,
     keySource: "none",
@@ -48,7 +48,10 @@ export default function SettingsPage() {
         setForm({
           provider: settings.provider ?? "deepseek",
           baseUrl: settings.baseUrl ?? "https://api.deepseek.com",
-          model: settings.model ?? "deepseek-chat",
+          model:
+            MODEL_CATALOG.some((m) => m.id === settings.model)
+              ? settings.model
+              : "deepseek-v4-flash",
           apiKey: settings.apiKey ?? "",
           hasApiKey: Boolean(settings.hasApiKey),
           keySource: settings.keySource ?? "none",
@@ -146,7 +149,7 @@ export default function SettingsPage() {
           <p className="font-medium text-ink">推荐配置（.env.local）</p>
           <pre className="mt-2 overflow-auto text-xs leading-relaxed">{`DEEPSEEK_API_KEY=你的key
 LLM_BASE_URL=https://api.deepseek.com
-LLM_MODEL=deepseek-chat
+LLM_MODEL=deepseek-v4-flash
 LLM_PROVIDER=deepseek`}</pre>
         </div>
 

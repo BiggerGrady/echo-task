@@ -36,7 +36,7 @@ cp .env.example .env.local
 |------|------|
 | `DEEPSEEK_API_KEY` | DeepSeek Key（推荐） |
 | `LLM_BASE_URL` | 默认 `https://api.deepseek.com` |
-| `LLM_MODEL` | 默认 `deepseek-chat`（也可用 `deepseek-reasoner`） |
+| `LLM_MODEL` | 默认 `deepseek-v4-flash`（可选 `deepseek-v4-pro`） |
 | `LLM_PROVIDER` | 默认 `deepseek` |
 
 未配置 Key 时自动进入**演示模式**。也可在网页「模型设置」中本机填写（保存在本地 SQLite）。

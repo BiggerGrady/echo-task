@@ -4,6 +4,7 @@ import {
   DEEPSEEK_DEFAULT_MODEL,
   getDb,
   getSettingsPublic,
+  normalizeDeepseekModel,
   saveSettings,
   type AppSettings,
   DEFAULT_SETTINGS,
@@ -16,7 +17,7 @@ const PROVIDER_PRESETS: Record<
   { baseUrl: string; model: string } | null
 > = {
   deepseek: { baseUrl: DEEPSEEK_BASE_URL, model: DEEPSEEK_DEFAULT_MODEL },
-  openai: { baseUrl: "https://api.openai.com/v1", model: "gpt-4o" },
+  openai: { baseUrl: DEEPSEEK_BASE_URL, model: DEEPSEEK_DEFAULT_MODEL },
   "cursor-compatible": { baseUrl: DEEPSEEK_BASE_URL, model: DEEPSEEK_DEFAULT_MODEL },
   demo: null,
 };
@@ -32,6 +33,7 @@ function readStoredSettings(): AppSettings {
       ...DEFAULT_SETTINGS,
       ...saved,
       apiKey: saved.apiKey?.trim() || "",
+      model: normalizeDeepseekModel(saved.model),
     };
   } catch {
     return { ...DEFAULT_SETTINGS, apiKey: "" };
@@ -50,7 +52,7 @@ export async function PUT(req: NextRequest) {
   const next: AppSettings = {
     provider: body.provider ?? stored.provider,
     baseUrl: body.baseUrl ?? stored.baseUrl,
-    model: body.model ?? stored.model,
+    model: normalizeDeepseekModel(body.model ?? stored.model),
     apiKey: stored.apiKey,
   };
 
@@ -61,6 +63,8 @@ export async function PUT(req: NextRequest) {
       if (body.model === undefined) next.model = preset.model;
     }
   }
+
+  next.model = normalizeDeepseekModel(next.model);
 
   if (body.clearApiKey) next.apiKey = "";
   else if (typeof body.apiKey === "string" && body.apiKey && !body.apiKey.includes("••••")) {
