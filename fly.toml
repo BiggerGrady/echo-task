@@ -1,0 +1,35 @@
+# fly.toml app configuration file generated for Echo Task
+# See https://fly.io/docs/reference/configuration/
+
+app = "echo-task-app"
+primary_region = "sin"
+
+[build]
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3000"
+  DATA_ROOT = "/data"
+  LLM_PROVIDER = "deepseek"
+  LLM_BASE_URL = "https://api.deepseek.com"
+  LLM_MODEL = "deepseek-v4-flash"
+  DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+  DEEPSEEK_MODEL = "deepseek-v4-flash"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+[[vm]]
+  memory = "1gb"
+  cpu_kind = "shared"
+  cpus = 1
+
+[mounts]
+  source = "echo_task_data"
+  destination = "/data"
+  initial_size = "3gb"
