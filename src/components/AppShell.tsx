@@ -50,7 +50,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             })}
           </nav>
           <div className="mt-6 rounded-xl bg-ink px-3 py-3 text-xs leading-relaxed text-paper/80">
-            模型入口对齐 Cursor 可用模型列表，通过 OpenAI 兼容协议调用。
+            默认对接 DeepSeek；Key 请放在本地 .env.local，不要发到聊天。
           </div>
         </aside>
 

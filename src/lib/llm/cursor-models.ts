@@ -1,17 +1,28 @@
 /**
- * Models commonly available in Cursor's model picker.
- * Used as the primary model catalog for Echo Task's LLM entry.
- * Actual calls go through an OpenAI-compatible endpoint
- * (user-provided base URL + API key), or demo mode when unset.
+ * Model catalog for Echo Task.
+ * DeepSeek is the default provider; Cursor-common models remain selectable
+ * when using other OpenAI-compatible endpoints.
  */
-export type CursorModel = {
+export type CatalogModel = {
   id: string;
   label: string;
   vendor: string;
   description: string;
 };
 
-export const CURSOR_MODELS: CursorModel[] = [
+export const MODEL_CATALOG: CatalogModel[] = [
+  {
+    id: "deepseek-chat",
+    label: "DeepSeek Chat",
+    vendor: "DeepSeek",
+    description: "默认推荐：通用对话与文档/表格处理",
+  },
+  {
+    id: "deepseek-reasoner",
+    label: "DeepSeek Reasoner",
+    vendor: "DeepSeek",
+    description: "更强推理，适合复杂规则与长文档校验",
+  },
   {
     id: "gpt-4o",
     label: "GPT-4o",
@@ -74,6 +85,9 @@ export const CURSOR_MODELS: CursorModel[] = [
   },
 ];
 
-export function findCursorModel(id: string) {
-  return CURSOR_MODELS.find((m) => m.id === id);
+/** @deprecated use MODEL_CATALOG */
+export const CURSOR_MODELS = MODEL_CATALOG;
+
+export function findCatalogModel(id: string) {
+  return MODEL_CATALOG.find((m) => m.id === id);
 }

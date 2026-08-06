@@ -34,7 +34,7 @@ export default function HomePage() {
         <div className="relative max-w-2xl animate-rise">
           <p className="font-display text-5xl leading-none tracking-tight md:text-7xl">Echo Task</p>
           <p className="mt-5 text-lg text-paper/75 md:text-xl">
-            把 Word 校验与 Excel 变换放进同一张工作台，模型入口对齐 Cursor 可用模型。
+            把 Word 校验与 Excel 变换放进同一张工作台，默认对接 DeepSeek 模型。
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Link

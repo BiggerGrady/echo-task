@@ -19,13 +19,27 @@ npm run dev
 
 打开 [http://localhost:3000](http://localhost:3000)。
 
-## 模型说明
+## 模型说明（DeepSeek 默认）
 
-Cursor 不直接提供可被外部服务调用的模型 HTTP API。本项目：
+默认供应商为 [DeepSeek](https://api.deepseek.com)（OpenAI 兼容）。**不要把 API Key 发到聊天或提交进 Git。**
 
-1. 在「模型设置」中提供 Cursor 常用模型清单作为选择入口
-2. 通过 `Base URL + API Key` 对接 OpenAI 兼容供应商
-3. 未配置 Key 时自动进入**演示模式**，页面与流程仍可跑通
+在项目根目录创建 `.env.local`：
+
+```bash
+cp .env.example .env.local
+# 编辑 .env.local，填入 DEEPSEEK_API_KEY=...
+```
+
+常用变量：
+
+| 变量 | 说明 |
+|------|------|
+| `DEEPSEEK_API_KEY` | DeepSeek Key（推荐） |
+| `LLM_BASE_URL` | 默认 `https://api.deepseek.com` |
+| `LLM_MODEL` | 默认 `deepseek-chat`（也可用 `deepseek-reasoner`） |
+| `LLM_PROVIDER` | 默认 `deepseek` |
+
+未配置 Key 时自动进入**演示模式**。也可在网页「模型设置」中本机填写（保存在本地 SQLite）。
 
 ## 数据
 

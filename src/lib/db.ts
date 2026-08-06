@@ -65,29 +65,73 @@ export function getDb(): Database.Database {
 }
 
 export type AppSettings = {
-  provider: "cursor-compatible" | "openai" | "demo";
+  provider: "deepseek" | "cursor-compatible" | "openai" | "demo";
   baseUrl: string;
   apiKey: string;
   model: string;
 };
 
+export const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
+export const DEEPSEEK_DEFAULT_MODEL = "deepseek-chat";
+
 export const DEFAULT_SETTINGS: AppSettings = {
-  provider: "demo",
-  baseUrl: "https://api.openai.com/v1",
+  provider: "deepseek",
+  baseUrl: DEEPSEEK_BASE_URL,
   apiKey: "",
-  model: "gpt-4o",
+  model: DEEPSEEK_DEFAULT_MODEL,
 };
 
+function readEnvSettings(): Partial<AppSettings> {
+  const apiKey =
+    process.env.DEEPSEEK_API_KEY?.trim() ||
+    process.env.LLM_API_KEY?.trim() ||
+    "";
+  const baseUrl =
+    process.env.DEEPSEEK_BASE_URL?.trim() ||
+    process.env.LLM_BASE_URL?.trim() ||
+    DEEPSEEK_BASE_URL;
+  const model =
+    process.env.DEEPSEEK_MODEL?.trim() ||
+    process.env.LLM_MODEL?.trim() ||
+    DEEPSEEK_DEFAULT_MODEL;
+  const providerRaw = process.env.LLM_PROVIDER?.trim() as AppSettings["provider"] | undefined;
+  const provider: AppSettings["provider"] | undefined =
+    providerRaw && ["deepseek", "cursor-compatible", "openai", "demo"].includes(providerRaw)
+      ? providerRaw
+      : apiKey
+        ? "deepseek"
+        : undefined;
+
+  const result: Partial<AppSettings> = {};
+  if (provider) result.provider = provider;
+  if (baseUrl) result.baseUrl = baseUrl;
+  if (model) result.model = model;
+  if (apiKey) result.apiKey = apiKey;
+  return result;
+}
+
 export function getSettings(): AppSettings {
+  const fromEnv = readEnvSettings();
   const database = getDb();
   const row = database.prepare("SELECT value FROM settings WHERE key = ?").get("llm") as
     | { value: string }
     | undefined;
-  if (!row) return { ...DEFAULT_SETTINGS };
+
+  if (!row) {
+    return { ...DEFAULT_SETTINGS, ...fromEnv };
+  }
+
   try {
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(row.value) };
+    const saved = JSON.parse(row.value) as Partial<AppSettings>;
+    return {
+      ...DEFAULT_SETTINGS,
+      ...fromEnv,
+      ...saved,
+      // Prefer DB key when present; otherwise fall back to env (never commit secrets).
+      apiKey: saved.apiKey?.trim() || fromEnv.apiKey || "",
+    };
   } catch {
-    return { ...DEFAULT_SETTINGS };
+    return { ...DEFAULT_SETTINGS, ...fromEnv };
   }
 }
 
@@ -99,4 +143,32 @@ export function saveSettings(settings: AppSettings) {
        ON CONFLICT(key) DO UPDATE SET value = excluded.value`
     )
     .run("llm", JSON.stringify(settings));
+}
+
+export function getSettingsPublic() {
+  const settings = getSettings();
+  const envKey = Boolean(
+    process.env.DEEPSEEK_API_KEY?.trim() || process.env.LLM_API_KEY?.trim()
+  );
+  const dbRow = getDb().prepare("SELECT value FROM settings WHERE key = ?").get("llm") as
+    | { value: string }
+    | undefined;
+  let dbHasKey = false;
+  if (dbRow) {
+    try {
+      const saved = JSON.parse(dbRow.value) as Partial<AppSettings>;
+      dbHasKey = Boolean(saved.apiKey?.trim());
+    } catch {
+      dbHasKey = false;
+    }
+  }
+
+  return {
+    provider: settings.provider,
+    baseUrl: settings.baseUrl,
+    model: settings.model,
+    apiKey: settings.apiKey ? `••••••••${settings.apiKey.slice(-4)}` : "",
+    hasApiKey: Boolean(settings.apiKey),
+    keySource: dbHasKey ? "database" : envKey ? "env" : "none",
+  };
 }

@@ -10,21 +10,30 @@ type Model = {
 };
 
 type Settings = {
-  provider: "cursor-compatible" | "openai" | "demo";
+  provider: "deepseek" | "cursor-compatible" | "openai" | "demo";
   baseUrl: string;
   model: string;
   apiKey: string;
   hasApiKey: boolean;
+  keySource?: "database" | "env" | "none";
+};
+
+const PRESETS: Record<Settings["provider"], { baseUrl: string; model: string } | null> = {
+  deepseek: { baseUrl: "https://api.deepseek.com", model: "deepseek-chat" },
+  openai: { baseUrl: "https://api.openai.com/v1", model: "gpt-4o" },
+  "cursor-compatible": { baseUrl: "https://api.deepseek.com", model: "deepseek-chat" },
+  demo: null,
 };
 
 export default function SettingsPage() {
   const [models, setModels] = useState<Model[]>([]);
   const [form, setForm] = useState<Settings>({
-    provider: "demo",
-    baseUrl: "https://api.openai.com/v1",
-    model: "gpt-4o",
+    provider: "deepseek",
+    baseUrl: "https://api.deepseek.com",
+    model: "deepseek-chat",
     apiKey: "",
     hasApiKey: false,
+    keySource: "none",
   });
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [message, setMessage] = useState("");
@@ -40,11 +49,20 @@ export default function SettingsPage() {
     });
   }, []);
 
+  function onProviderChange(provider: Settings["provider"]) {
+    const preset = PRESETS[provider];
+    setForm((f) => ({
+      ...f,
+      provider,
+      ...(preset ? { baseUrl: preset.baseUrl, model: preset.model } : {}),
+    }));
+  }
+
   async function save() {
     setSaving(true);
     setMessage("");
     try {
-      await fetch("/api/settings", {
+      const res = await fetch("/api/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -54,9 +72,16 @@ export default function SettingsPage() {
           apiKey: apiKeyInput || undefined,
         }),
       });
+      const refreshed = await res.json();
       setApiKeyInput("");
-      const refreshed = await (await fetch("/api/settings")).json();
-      setForm(refreshed);
+      setForm({
+        provider: refreshed.provider,
+        baseUrl: refreshed.baseUrl,
+        model: refreshed.model,
+        apiKey: refreshed.apiKey,
+        hasApiKey: refreshed.hasApiKey,
+        keySource: refreshed.keySource,
+      });
       setMessage("已保存");
     } catch {
       setMessage("保存失败");
@@ -74,32 +99,43 @@ export default function SettingsPage() {
     setTesting(false);
   }
 
+  const keyHint =
+    form.keySource === "env"
+      ? "已从环境变量读取 Key（推荐，不会进仓库）"
+      : form.keySource === "database"
+        ? `已保存在本地数据库 ${form.apiKey}`
+        : "尚未配置 Key";
+
   return (
     <div className="space-y-6">
       <header>
         <h1 className="font-display text-4xl text-ink md:text-5xl">模型设置</h1>
         <p className="mt-3 max-w-2xl text-ink-soft/75">
-          Cursor 本身不直接暴露 HTTP 模型 API。这里以「Cursor 可用模型列表」作为入口，
-          通过 OpenAI 兼容协议对接你可访问的供应商（含免费额度）。未配置 Key 时走演示模式。
+          默认对接 DeepSeek（OpenAI 兼容）。推荐把 Key 放在本地 <code className="text-celadon">.env.local</code>
+          ，不要发到聊天或提交到 Git。
         </p>
       </header>
 
       <section className="panel space-y-4 rounded-2xl p-6 shadow-soft">
+        <div className="rounded-xl bg-mist/50 px-4 py-3 text-sm text-ink-soft/80">
+          <p className="font-medium text-ink">推荐配置（.env.local）</p>
+          <pre className="mt-2 overflow-auto text-xs leading-relaxed">{`DEEPSEEK_API_KEY=你的key
+LLM_BASE_URL=https://api.deepseek.com
+LLM_MODEL=deepseek-chat
+LLM_PROVIDER=deepseek`}</pre>
+        </div>
+
         <label className="block text-sm">
           <span className="mb-1 block text-ink-soft/70">调用模式</span>
           <select
             value={form.provider}
-            onChange={(e) =>
-              setForm((f) => ({
-                ...f,
-                provider: e.target.value as Settings["provider"],
-              }))
-            }
+            onChange={(e) => onProviderChange(e.target.value as Settings["provider"])}
             className="w-full rounded-xl border border-[var(--line)] bg-white/70 px-3 py-2 outline-none focus:border-celadon"
           >
-            <option value="demo">演示模式（无需 Key）</option>
-            <option value="cursor-compatible">Cursor 兼容入口（OpenAI Compatible）</option>
+            <option value="deepseek">DeepSeek（默认）</option>
+            <option value="cursor-compatible">OpenAI Compatible（自定义）</option>
             <option value="openai">OpenAI 官方</option>
+            <option value="demo">演示模式（无需 Key）</option>
           </select>
         </label>
 
@@ -109,7 +145,7 @@ export default function SettingsPage() {
             value={form.baseUrl}
             onChange={(e) => setForm((f) => ({ ...f, baseUrl: e.target.value }))}
             className="w-full rounded-xl border border-[var(--line)] bg-white/70 px-3 py-2 outline-none focus:border-celadon"
-            placeholder="https://api.openai.com/v1"
+            placeholder="https://api.deepseek.com"
           />
         </label>
 
@@ -120,12 +156,13 @@ export default function SettingsPage() {
             value={apiKeyInput}
             onChange={(e) => setApiKeyInput(e.target.value)}
             className="w-full rounded-xl border border-[var(--line)] bg-white/70 px-3 py-2 outline-none focus:border-celadon"
-            placeholder={form.hasApiKey ? `已保存 ${form.apiKey}` : "粘贴你的 API Key"}
+            placeholder="仅在本机填写；优先用 .env.local"
           />
+          <span className="mt-1 block text-xs text-ink-soft/55">{keyHint}</span>
         </label>
 
         <label className="block text-sm">
-          <span className="mb-1 block text-ink-soft/70">模型（Cursor 可用清单）</span>
+          <span className="mb-1 block text-ink-soft/70">模型</span>
           <select
             value={form.model}
             onChange={(e) => setForm((f) => ({ ...f, model: e.target.value }))}

@@ -13,6 +13,10 @@ export type LlmResult = {
   demo: boolean;
 };
 
+function normalizeBaseUrl(baseUrl: string): string {
+  return baseUrl.replace(/\/+$/, "");
+}
+
 function demoComplete(messages: ChatMessage[]): string {
   const lastUser = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
   const system = messages.find((m) => m.role === "system")?.content ?? "";
@@ -31,7 +35,7 @@ function demoComplete(messages: ChatMessage[]): string {
       id: i + 1,
       original: text.slice(0, 120),
       suggestion: text.slice(0, 120),
-      reason: "演示模式：请配置 Cursor 兼容模型入口后获取真实语法建议",
+      reason: "演示模式：请配置 DeepSeek API Key 后获取真实语法建议",
       severity: i % 2 === 0 ? "warning" : "info",
     }));
 
@@ -47,7 +51,7 @@ function demoComplete(messages: ChatMessage[]): string {
       operations: [
         {
           type: "note",
-          description: "请在设置中配置 OpenAI 兼容接口（可对接 Cursor 同款模型供应商）",
+          description: "请在 .env.local 或设置页配置 DeepSeek（https://api.deepseek.com）",
         },
       ],
       previewRows: [],
@@ -55,7 +59,7 @@ function demoComplete(messages: ChatMessage[]): string {
   }
 
   return JSON.stringify({
-    summary: "演示模式响应：请在「设置」中配置模型入口以启用真实调用。",
+    summary: "演示模式响应：请配置 DeepSeek API Key 以启用真实调用。",
     content: lastUser.slice(0, 500),
   });
 }
@@ -77,14 +81,14 @@ export async function chatCompletion(
 
   const client = new OpenAI({
     apiKey: settings.apiKey,
-    baseURL: settings.baseUrl || undefined,
+    baseURL: normalizeBaseUrl(settings.baseUrl) || undefined,
   });
 
   const response = await client.chat.completions.create({
     model: settings.model,
     messages,
     temperature: options?.temperature ?? 0.2,
-    response_format: options?.json ? { type: "json_object" } : undefined,
+    ...(options?.json ? { response_format: { type: "json_object" as const } } : {}),
   });
 
   const content = response.choices[0]?.message?.content ?? "";
@@ -106,7 +110,8 @@ export async function testLlmConnection(): Promise<{
   if (settings.provider === "demo" || !settings.apiKey.trim()) {
     return {
       ok: true,
-      message: "当前为演示模式。配置 API Key 与 Base URL 后即可调用 Cursor 同款模型入口。",
+      message:
+        "当前为演示模式。请在 .env.local 设置 DEEPSEEK_API_KEY，或在本页保存 Key 后测试。",
       demo: true,
       model: settings.model,
     };
