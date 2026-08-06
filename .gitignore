@@ -42,8 +42,14 @@ next-env.d.ts
 
 # app data
 /data/*.db
-/data/uploads/
-/data/outputs/
-/data/references/
-/data/skills/
-!.gitkeep
+/data/uploads/**
+/data/outputs/**
+/data/references/**
+/data/skills/**
+!/data/uploads/.gitkeep
+!/data/outputs/.gitkeep
+!/data/references/.gitkeep
+!/data/skills/.gitkeep
+/data/*.db-*
+AGENTS.md
+CLAUDE.md

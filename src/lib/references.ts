@@ -1,7 +1,7 @@
-import { getDb } from "../db";
+import { getDb } from "./db";
 import fs from "fs";
 import path from "path";
-import { REFERENCES_DIR } from "../paths";
+import { REFERENCES_DIR } from "./paths";
 import { randomUUID } from "crypto";
 
 export type ReferenceScope = "global" | "word" | "excel";

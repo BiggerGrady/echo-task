@@ -17,17 +17,20 @@ function demoComplete(messages: ChatMessage[]): string {
   const lastUser = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
   const system = messages.find((m) => m.role === "system")?.content ?? "";
 
-  if (system.includes("语法") || system.includes("grammar") || lastUser.includes("校验")) {
-    const sentences = lastUser
+  if (system.includes("语法") || system.includes("grammar") || lastUser.includes("待校验正文")) {
+    const body = lastUser.includes("## 待校验正文")
+      ? lastUser.split("## 待校验正文").pop() ?? lastUser
+      : lastUser;
+    const sentences = body
       .split(/[。！？\n]/)
       .map((s) => s.trim())
-      .filter((s) => s.length > 8)
+      .filter((s) => s.length > 4)
       .slice(0, 5);
 
     const issues = sentences.map((text, i) => ({
       id: i + 1,
-      original: text.slice(0, 80),
-      suggestion: text.slice(0, 80),
+      original: text.slice(0, 120),
+      suggestion: text.slice(0, 120),
       reason: "演示模式：请配置 Cursor 兼容模型入口后获取真实语法建议",
       severity: i % 2 === 0 ? "warning" : "info",
     }));

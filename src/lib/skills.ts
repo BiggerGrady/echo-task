@@ -1,4 +1,4 @@
-import { getDb } from "../db";
+import { getDb } from "./db";
 import fs from "fs";
 import path from "path";
 import { SKILLS_DIR } from "./paths";
