@@ -34,13 +34,13 @@ function demoComplete(messages: ChatMessage[]): string {
     const issues = sentences.map((text, i) => ({
       id: i + 1,
       original: text.slice(0, 120),
-      suggestion: text.slice(0, 120),
-      reason: "演示模式：请配置 DeepSeek API Key 后获取真实语法建议",
+      suggestion: `${text.slice(0, 120)}（演示修改建议）`,
+      reason: "演示模式：配置 DeepSeek 后可获得真实语法批注",
       severity: i % 2 === 0 ? "warning" : "info",
     }));
 
     return JSON.stringify({
-      summary: "当前为演示模式。未配置 API Key 时不会真实调用大模型。",
+      summary: "当前为演示模式。已按正文片段生成示例批注，配置 API Key 后可真实校对。",
       issues,
     });
   }

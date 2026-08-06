@@ -18,6 +18,7 @@ type Result = {
   demo: boolean;
   model: string;
   extractedTextPreview: string;
+  commentedCount?: number;
 };
 
 export default function WordPage() {
@@ -54,7 +55,7 @@ export default function WordPage() {
       <header>
         <h1 className="font-display text-4xl text-ink md:text-5xl">文档校验</h1>
         <p className="mt-3 max-w-2xl text-ink-soft/75">
-          上传 Word（.docx），系统结合参考文档与 Skill，检查语法问题并生成标注报告。
+          上传 Word（.docx），系统结合参考文档与 Skill 检查语法，并在原文档中以批注形式标注问题。
         </p>
       </header>
 
@@ -88,13 +89,16 @@ export default function WordPage() {
               <p className="mt-1 text-sm text-ink-soft/65">
                 模型：{result.model}
                 {result.demo ? "（演示模式）" : ""}
+                {typeof result.commentedCount === "number"
+                  ? ` · 已写入 ${result.commentedCount} 条批注`
+                  : ""}
               </p>
             </div>
             <a
               href={`/api/download/${result.outputFilename}`}
               className="rounded-xl bg-ink px-4 py-2 text-sm text-paper"
             >
-              下载标注报告
+              下载带批注的 Word
             </a>
           </div>
           <p className="text-sm leading-relaxed text-ink-soft/80">{result.summary}</p>

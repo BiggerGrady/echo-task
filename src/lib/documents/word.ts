@@ -1,15 +1,8 @@
 import mammoth from "mammoth";
-import {
-  Document,
-  Packer,
-  Paragraph,
-  TextRun,
-  HeadingLevel,
-  BorderStyle,
-} from "docx";
 import { chatCompletion } from "../llm";
 import { buildReferenceContext } from "../references";
 import { buildSkillContext } from "../skills";
+import { injectCommentsIntoDocx } from "./word-comments";
 import fs from "fs";
 import path from "path";
 import { OUTPUTS_DIR } from "../paths";
@@ -31,6 +24,7 @@ export type WordValidationResult = {
   demo: boolean;
   model: string;
   extractedTextPreview: string;
+  commentedCount: number;
 };
 
 function parseIssues(raw: string): { summary: string; issues: GrammarIssue[] } {
@@ -48,79 +42,10 @@ function parseIssues(raw: string): { summary: string; issues: GrammarIssue[] } {
   }
 }
 
-async function buildAnnotatedDocx(
-  originalText: string,
-  summary: string,
-  issues: GrammarIssue[]
-): Promise<Buffer> {
-  const issueParagraphs = issues.flatMap((issue) => [
-    new Paragraph({
-      spacing: { before: 200, after: 80 },
-      children: [
-        new TextRun({
-          text: `[${issue.severity.toUpperCase()}] #${issue.id} `,
-          bold: true,
-          color: issue.severity === "error" ? "B42318" : issue.severity === "warning" ? "B54708" : "175CD3",
-        }),
-        new TextRun({ text: issue.reason, italics: true }),
-      ],
-    }),
-    new Paragraph({
-      children: [
-        new TextRun({ text: "原文：", bold: true }),
-        new TextRun({ text: issue.original }),
-      ],
-    }),
-    new Paragraph({
-      border: {
-        bottom: { style: BorderStyle.SINGLE, size: 6, color: "D0D5DD", space: 8 },
-      },
-      spacing: { after: 160 },
-      children: [
-        new TextRun({ text: "建议：", bold: true, color: "027A48" }),
-        new TextRun({ text: issue.suggestion, color: "027A48" }),
-      ],
-    }),
-  ]);
-
-  const doc = new Document({
-    sections: [
-      {
-        children: [
-          new Paragraph({
-            heading: HeadingLevel.HEADING_1,
-            children: [new TextRun("Echo Task · Word 语法校验报告")],
-          }),
-          new Paragraph({
-            spacing: { after: 200 },
-            children: [new TextRun({ text: summary })],
-          }),
-          new Paragraph({
-            heading: HeadingLevel.HEADING_2,
-            children: [new TextRun(`问题列表（${issues.length}）`)],
-          }),
-          ...issueParagraphs,
-          new Paragraph({
-            heading: HeadingLevel.HEADING_2,
-            children: [new TextRun("原文摘录")],
-          }),
-          ...originalText
-            .split(/\n+/)
-            .filter(Boolean)
-            .slice(0, 80)
-            .map(
-              (line) =>
-                new Paragraph({
-                  spacing: { after: 80 },
-                  children: [new TextRun(line)],
-                })
-            ),
-        ],
-      },
-    ],
-  });
-
-  return Packer.toBuffer(doc);
+function severityLabel(severity: GrammarIssue["severity"]) {
+  if (severity === "error") return "错误";
+  if (severity === "warning") return "警告";
+  return "建议";
 }
 
 export async function validateWordDocument(
@@ -139,8 +64,11 @@ export async function validateWordDocument(
       {
         role: "system",
         content: `你是中文/英文公文与业务文档校对专家。请检查语法、用词、标点、句式问题，并返回 JSON：
-{"summary":"总评","issues":[{"id":1,"original":"原文片段","suggestion":"修改建议","reason":"原因","severity":"error|warning|info"}]}
-只返回 JSON。结合参考文档与 Skill 约束执行。`,
+{"summary":"总评","issues":[{"id":1,"original":"原文中可定位的连续片段","suggestion":"修改建议","reason":"原因","severity":"error|warning|info"}]}
+要求：
+1) original 必须尽量是正文中真实出现的连续原文，便于在 Word 中挂批注；
+2) 只返回 JSON；
+3) 结合参考文档与 Skill 约束执行。`,
       },
       {
         role: "user",
@@ -160,9 +88,43 @@ ${text.slice(0, 24000)}`,
   );
 
   const { summary, issues } = parseIssues(llm.content);
-  const annotated = await buildAnnotatedDocx(text, summary, issues);
+
+  const commentPayloads = [
+    ...issues.map((issue) => {
+      const locate = (issue.original || "").trim();
+      return {
+        locate,
+        body: [
+          locate ? `【定位】${locate}` : "",
+          `[${severityLabel(issue.severity)}] ${issue.reason || "需修订"}`,
+          issue.suggestion ? `建议：${issue.suggestion}` : "",
+          issue.original ? `原文：${issue.original}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      };
+    }),
+    ...(summary
+      ? [
+          {
+            locate: "",
+            body: `【总评】${summary}`,
+          },
+        ]
+      : []),
+  ];
+
+  const normalizedComments = commentPayloads.map((c, i) => ({
+    id: i,
+    body: c.body,
+    author: "Echo Task",
+    initials: "ET",
+  }));
+
+  const annotated = await injectCommentsIntoDocx(fileBuffer, normalizedComments);
   const jobId = randomUUID();
-  const outputFilename = `${jobId}-word-report.docx`;
+  const safeBase = path.basename(originalName, path.extname(originalName)) || "document";
+  const outputFilename = `${jobId}-${safeBase}-批注.docx`;
   fs.mkdirSync(OUTPUTS_DIR, { recursive: true });
   fs.writeFileSync(path.join(OUTPUTS_DIR, outputFilename), annotated);
 
@@ -174,5 +136,6 @@ ${text.slice(0, 24000)}`,
     demo: llm.demo,
     model: llm.model,
     extractedTextPreview: preview,
+    commentedCount: normalizedComments.length,
   };
 }
