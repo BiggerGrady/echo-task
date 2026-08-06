@@ -1,0 +1,14 @@
+{
+  "name": "Echo Task",
+  "install": "npm ci",
+  "terminals": [
+    {
+      "name": "dev",
+      "command": "npm run dev -- -H 0.0.0.0 -p 3000",
+      "description": "Next.js (Turbopack) dev server on http://localhost:3000. Runs in demo mode unless DEEPSEEK_API_KEY is set."
+    }
+  ],
+  "ports": [
+    { "name": "web", "port": 3000 }
+  ]
+}
