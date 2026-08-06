@@ -50,4 +50,4 @@ cp .env.example .env.local
 
 ## 公网部署
 
-见 [DEPLOY.md](./DEPLOY.md)。推荐 Fly.io（无需自备云服务器）。
+推荐 **Mac Mini 本机运行 + Cloudflare Tunnel**（无需云服务器/信用卡）。步骤见 [DEPLOY.md](./DEPLOY.md)。
