@@ -4,6 +4,7 @@ import fs from "fs";
 import path from "path";
 import { UPLOADS_DIR } from "@/lib/paths";
 import { randomUUID } from "crypto";
+import { completeJob, createJob } from "@/lib/jobs";
 
 export const runtime = "nodejs";
 
@@ -24,15 +25,32 @@ export async function POST(req: NextRequest) {
 
   const buffer = Buffer.from(await file.arrayBuffer());
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-  fs.writeFileSync(path.join(UPLOADS_DIR, `${randomUUID()}-${file.name}`), buffer);
+  const saved = `${randomUUID()}-${file.name}`;
+  fs.writeFileSync(path.join(UPLOADS_DIR, saved), buffer);
+
+  const job = createJob({
+    type: "excel",
+    originalName: file.name,
+    inputFilename: saved,
+    instruction,
+  });
 
   try {
     const result = await processExcelWithInstruction(buffer, file.name, instruction);
-    return NextResponse.json(result);
+    completeJob(job.id, {
+      status: "succeeded",
+      outputFilename: result.outputFilename,
+      result: {
+        summary: result.summary,
+        demo: result.demo,
+        model: result.model,
+        sheetNames: result.sheetNames,
+      },
+    });
+    return NextResponse.json({ ...result, jobId: job.id });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "处理失败" },
-      { status: 500 }
-    );
+    const message = error instanceof Error ? error.message : "处理失败";
+    completeJob(job.id, { status: "failed", error: message });
+    return NextResponse.json({ error: message, jobId: job.id }, { status: 500 });
   }
 }

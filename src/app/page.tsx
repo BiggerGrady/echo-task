@@ -4,12 +4,17 @@ const FEATURES = [
   {
     href: "/word",
     title: "文档校验",
-    copy: "上传 Word，检查语法并生成带标注的报告。",
+    copy: "上传 Word，检查语法并在原文档写入批注。",
   },
   {
     href: "/excel",
     title: "Excel 处理",
     copy: "用自然语言描述规则，输出处理后的表格文件。",
+  },
+  {
+    href: "/history",
+    title: "处理历史",
+    copy: "每次处理的原文与结果都会保存，可回看和下载。",
   },
   {
     href: "/references",

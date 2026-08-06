@@ -7,6 +7,7 @@ const NAV = [
   { href: "/", label: "总览", hint: "Overview" },
   { href: "/word", label: "文档校验", hint: "Word" },
   { href: "/excel", label: "Excel 处理", hint: "Sheets" },
+  { href: "/history", label: "处理历史", hint: "History" },
   { href: "/references", label: "参考文档", hint: "Knowledge" },
   { href: "/skills", label: "Skill 配置", hint: "Skills" },
   { href: "/settings", label: "模型设置", hint: "LLM" },
