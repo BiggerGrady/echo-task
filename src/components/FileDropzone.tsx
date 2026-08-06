@@ -1,0 +1,61 @@
+"use client";
+
+import { useRef, useState } from "react";
+
+type Props = {
+  accept: string;
+  label: string;
+  hint: string;
+  file: File | null;
+  onFile: (file: File | null) => void;
+};
+
+export function FileDropzone({ accept, label, hint, file, onFile }: Props) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
+
+  return (
+    <div
+      className={`panel rounded-2xl border-dashed p-6 transition ${
+        dragging ? "border-celadon bg-mist/40" : ""
+      }`}
+      onDragOver={(e) => {
+        e.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragging(false);
+        const f = e.dataTransfer.files?.[0];
+        if (f) onFile(f);
+      }}
+    >
+      <input
+        ref={inputRef}
+        type="file"
+        accept={accept}
+        className="hidden"
+        onChange={(e) => onFile(e.target.files?.[0] ?? null)}
+      />
+      <p className="font-display text-xl text-ink">{label}</p>
+      <p className="mt-1 text-sm text-ink-soft/70">{hint}</p>
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          className="rounded-xl bg-ink px-4 py-2 text-sm text-paper transition hover:bg-ink-soft"
+        >
+          选择文件
+        </button>
+        {file ? (
+          <span className="text-sm text-celadon">
+            已选：{file.name}（{(file.size / 1024).toFixed(1)} KB）
+          </span>
+        ) : (
+          <span className="text-sm text-ink-soft/50">或拖拽到此处</span>
+        )}
+      </div>
+    </div>
+  );
+}
