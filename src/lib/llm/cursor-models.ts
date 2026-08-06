@@ -1,7 +1,7 @@
 /**
- * Model catalog for Echo Task.
- * DeepSeek is the default provider; Cursor-common models remain selectable
- * when using other OpenAI-compatible endpoints.
+ * Client-safe model catalog (no Node/server imports).
+ * DeepSeek is default; other Cursor-common models remain available
+ * for OpenAI-compatible endpoints.
  */
 export type CatalogModel = {
   id: string;

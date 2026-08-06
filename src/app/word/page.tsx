@@ -28,7 +28,10 @@ export default function WordPage() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!file) return;
+    if (!file) {
+      setError("请先选择 .docx 文件");
+      return;
+    }
     setLoading(true);
     setError("");
     setResult(null);
@@ -36,8 +39,8 @@ export default function WordPage() {
       const body = new FormData();
       body.set("file", file);
       const res = await fetch("/api/word/validate", { method: "POST", body });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "校验失败");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `校验失败（${res.status}）`);
       setResult(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "校验失败");
@@ -61,11 +64,14 @@ export default function WordPage() {
           label="上传 Word 文档"
           hint="目前支持 .docx"
           file={file}
-          onFile={setFile}
+          onFile={(f) => {
+            setFile(f);
+            setError("");
+          }}
         />
         <button
           type="submit"
-          disabled={!file || loading}
+          disabled={loading}
           className="rounded-xl bg-celadon px-5 py-2.5 text-sm text-paper hover:bg-celadon-bright disabled:opacity-50"
         >
           {loading ? "校验中…" : "开始校验"}
@@ -93,7 +99,7 @@ export default function WordPage() {
           </div>
           <p className="text-sm leading-relaxed text-ink-soft/80">{result.summary}</p>
           <div className="space-y-3">
-            {result.issues.map((issue) => (
+            {(result.issues || []).map((issue) => (
               <article key={issue.id} className="rounded-xl bg-ink/[0.03] p-4">
                 <p className="text-xs uppercase tracking-wide text-clay">
                   {issue.severity} · #{issue.id}

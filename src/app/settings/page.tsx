@@ -1,13 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-
-type Model = {
-  id: string;
-  label: string;
-  vendor: string;
-  description: string;
-};
+import { MODEL_CATALOG, type CatalogModel } from "@/lib/llm/cursor-models";
 
 type Settings = {
   provider: "deepseek" | "cursor-compatible" | "openai" | "demo";
@@ -26,7 +20,7 @@ const PRESETS: Record<Settings["provider"], { baseUrl: string; model: string } |
 };
 
 export default function SettingsPage() {
-  const [models, setModels] = useState<Model[]>([]);
+  const [models, setModels] = useState<CatalogModel[]>(MODEL_CATALOG);
   const [form, setForm] = useState<Settings>({
     provider: "deepseek",
     baseUrl: "https://api.deepseek.com",
@@ -41,12 +35,34 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    Promise.all([fetch("/api/settings"), fetch("/api/llm/test")]).then(async ([s, m]) => {
-      const settings = await s.json();
-      const modelData = await m.json();
-      setForm(settings);
-      setModels(modelData.models || []);
-    });
+    let cancelled = false;
+    (async () => {
+      try {
+        const [settingsRes, modelsRes] = await Promise.all([
+          fetch("/api/settings"),
+          fetch("/api/models"),
+        ]);
+        const settings = await settingsRes.json();
+        const modelData = await modelsRes.json().catch(() => ({ models: MODEL_CATALOG }));
+        if (cancelled) return;
+        setForm({
+          provider: settings.provider ?? "deepseek",
+          baseUrl: settings.baseUrl ?? "https://api.deepseek.com",
+          model: settings.model ?? "deepseek-chat",
+          apiKey: settings.apiKey ?? "",
+          hasApiKey: Boolean(settings.hasApiKey),
+          keySource: settings.keySource ?? "none",
+        });
+        if (Array.isArray(modelData.models) && modelData.models.length) {
+          setModels(modelData.models);
+        }
+      } catch {
+        if (!cancelled) setMessage("加载设置失败，已使用本地默认模型列表");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   function onProviderChange(provider: Settings["provider"]) {
@@ -73,6 +89,7 @@ export default function SettingsPage() {
         }),
       });
       const refreshed = await res.json();
+      if (!res.ok) throw new Error(refreshed.error || "保存失败");
       setApiKeyInput("");
       setForm({
         provider: refreshed.provider,
@@ -82,9 +99,12 @@ export default function SettingsPage() {
         hasApiKey: refreshed.hasApiKey,
         keySource: refreshed.keySource,
       });
-      setMessage("已保存");
-    } catch {
-      setMessage("保存失败");
+      setMessage(
+        `已保存：${refreshed.provider} / ${refreshed.model}` +
+          (refreshed.hasApiKey ? "（已配置 Key）" : "（尚未配置 Key，将走演示模式）")
+      );
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "保存失败");
     } finally {
       setSaving(false);
     }
@@ -93,10 +113,15 @@ export default function SettingsPage() {
   async function test() {
     setTesting(true);
     setMessage("");
-    const res = await fetch("/api/llm/test", { method: "POST" });
-    const data = await res.json();
-    setMessage(data.message);
-    setTesting(false);
+    try {
+      const res = await fetch("/api/llm/test", { method: "POST" });
+      const data = await res.json();
+      setMessage(data.message || (data.ok ? "连通成功" : "连通失败"));
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "测试失败");
+    } finally {
+      setTesting(false);
+    }
   }
 
   const keyHint =
@@ -162,7 +187,7 @@ LLM_PROVIDER=deepseek`}</pre>
         </label>
 
         <label className="block text-sm">
-          <span className="mb-1 block text-ink-soft/70">模型</span>
+          <span className="mb-1 block text-ink-soft/70">模型（共 {models.length} 个）</span>
           <select
             value={form.model}
             onChange={(e) => setForm((f) => ({ ...f, model: e.target.value }))}

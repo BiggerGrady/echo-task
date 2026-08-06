@@ -21,7 +21,14 @@ export default function ExcelPage() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!file || !instruction.trim()) return;
+    if (!file) {
+      setError("请先选择 .xlsx 文件");
+      return;
+    }
+    if (!instruction.trim()) {
+      setError("请填写自然语言处理指令");
+      return;
+    }
     setLoading(true);
     setError("");
     setResult(null);
@@ -30,8 +37,8 @@ export default function ExcelPage() {
       body.set("file", file);
       body.set("instruction", instruction);
       const res = await fetch("/api/excel/process", { method: "POST", body });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "处理失败");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `处理失败（${res.status}）`);
       setResult(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "处理失败");
@@ -55,22 +62,27 @@ export default function ExcelPage() {
           label="上传 Excel"
           hint="目前支持 .xlsx"
           file={file}
-          onFile={setFile}
+          onFile={(f) => {
+            setFile(f);
+            setError("");
+          }}
         />
         <label className="panel block rounded-2xl p-5">
           <span className="font-display text-xl text-ink">处理指令</span>
           <textarea
-            required
             rows={4}
             value={instruction}
-            onChange={(e) => setInstruction(e.target.value)}
+            onChange={(e) => {
+              setInstruction(e.target.value);
+              setError("");
+            }}
             className="mt-3 w-full rounded-xl border border-[var(--line)] bg-white/70 px-3 py-2 text-sm outline-none focus:border-celadon"
             placeholder="例如：删除空行，保留姓名/部门/金额三列，并按金额降序排序"
           />
         </label>
         <button
           type="submit"
-          disabled={!file || !instruction.trim() || loading}
+          disabled={loading}
           className="rounded-xl bg-celadon px-5 py-2.5 text-sm text-paper hover:bg-celadon-bright disabled:opacity-50"
         >
           {loading ? "处理中…" : "开始处理"}
@@ -86,7 +98,8 @@ export default function ExcelPage() {
               <h2 className="font-display text-2xl text-ink">处理结果</h2>
               <p className="mt-1 text-sm text-ink-soft/65">
                 模型：{result.model}
-                {result.demo ? "（演示模式）" : ""} · 工作表：{result.sheetNames.join(", ") || "—"}
+                {result.demo ? "（演示模式）" : ""} · 工作表：
+                {(result.sheetNames || []).join(", ") || "—"}
               </p>
             </div>
             <a
