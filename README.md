@@ -51,3 +51,8 @@ cp .env.example .env.local
 ## 公网部署
 
 推荐 **Mac Mini 本机运行 + Cloudflare Tunnel**（无需云服务器/信用卡）。步骤见 [DEPLOY.md](./DEPLOY.md)。
+
+## 设计文档（持续维护）
+
+产品与技术方案见 [docs/DESIGN.md](./docs/DESIGN.md)。  
+**之后所有功能/接口/数据结构变更都必须同步更新该文档。**
