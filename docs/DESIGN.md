@@ -19,30 +19,32 @@ Echo Task 是本地可运行的文档/表格智能处理工作台：
 
 ---
 
-## 2. 当前现状（截至改版前）
+## 2. 当前现状（截至 Agent Chat Phase 1）
 
 ### 2.1 交互形态
 
-- 分页面表单：`/word`、`/excel`
-- 一次上传 → 一次阻塞式 LLM 调用 → 返回完整 JSON → 下载文件
-- 模型切换只在 `/settings`，处理页不能临时改模型
-- Word 无自然语言指令框；Excel 有指令框，但不是对话
+- 主入口：`/chat`（Agent 对话：流式 SSE、会话上下文、新建对话、本轮模型覆盖）
+- `/word`、`/excel` 重定向到 `/chat?type=word|excel`
+- 全局默认模型仍在 `/settings`；对话内可临时覆盖本轮模型
+- 无 API Key 时 Demo 模式可演示流式 UI
 
 ### 2.2 关键路径
 
 | 能力 | 页面 | API | 核心逻辑 |
 |------|------|-----|----------|
-| Word 校验 | `src/app/word/page.tsx` | `POST /api/word/validate` | `src/lib/documents/word.ts` |
-| Excel 处理 | `src/app/excel/page.tsx` | `POST /api/excel/process` | `src/lib/documents/excel.ts` |
-| LLM | 设置页 | `/api/settings`、`/api/models` | `src/lib/llm/index.ts` |
+| Agent Chat | `src/app/chat/` | `POST /api/chat`（SSE） | `src/lib/chat/orchestrator.ts` |
+| 会话 | 对话侧栏 | `/api/chat/sessions` | `src/lib/chat/sessions.ts` |
+| Word / Excel（兼容） | 重定向 | `POST /api/word/validate`、`/api/excel/process`（deprecated） | `src/lib/documents/*` |
+| LLM | 设置页 + 对话覆盖 | `/api/settings`、`/api/models` | `src/lib/llm/index.ts`（含 stream + 超时） |
 | 历史 | `/history` | `/api/jobs` | `src/lib/jobs.ts` |
+| 访问口令 | `/login` | `/api/auth/*` | `src/lib/auth.ts` + `src/middleware.ts` |
 
-### 2.3 已知缺口
+### 2.3 已知缺口（Phase 2+）
 
-- **无流式输出**（`chat.completions.create` 非 stream）
-- **无 Agent Chat 会话态**（jobs 是单次任务，不是多轮对话）
-- **处理页无法切换模型**
-- Word/Excel 体验割裂，不像「和一个助手协作」
+- 停止生成、会话重命名/搜索
+- 上下文窗口可视化
+- 历史分页与磁盘清理策略
+- API Key 仍明文存 SQLite（外网优先用 `.env.local`）
 
 ---
 
@@ -279,18 +281,18 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 
 ### Phase 1 — 可对话 + 可流式 + 上下文 + 新建对话（优先）
 
-- [ ] 新增 `/chat` 页面与 Composer
-- [ ] `chatCompletionStream` + `/api/chat` SSE
-- [ ] **sessions/messages 落库**；请求时携带本会话历史 messages
-- [ ] **新建对话**按钮（新 session，上下文隔离）
-- [ ] 会话列表（至少能切换最近会话）
-- [ ] Word/Excel 处理：上传+指令 → 流式过程 → 产物下载
-- [ ] 模型下拉覆盖本轮请求
-- [ ] 写入 jobs（兼容现有历史页）
-- [ ] `/word`、`/excel` 跳转 `/chat`
-- [ ] **基础安全**：默认绑定 localhost；可选访问口令（Tunnel 场景）
-- [ ] **可靠调用**：LLM 超时/取消；上传大小限制；截断提示
-- [ ] Demo 模式发送前可见提示
+- [x] 新增 `/chat` 页面与 Composer
+- [x] `chatCompletionStream` + `/api/chat` SSE
+- [x] **sessions/messages 落库**；请求时携带本会话历史 messages
+- [x] **新建对话**按钮（新 session，上下文隔离）
+- [x] 会话列表（至少能切换最近会话）
+- [x] Word/Excel 处理：上传+指令 → 流式过程 → 产物下载
+- [x] 模型下拉覆盖本轮请求
+- [x] 写入 jobs（兼容现有历史页）
+- [x] `/word`、`/excel` 跳转 `/chat`
+- [x] **基础安全**：默认绑定 localhost；可选访问口令（Tunnel 场景）
+- [x] **可靠调用**：LLM 超时/取消；上传大小限制；截断提示
+- [x] Demo 模式发送前可见提示
 
 ### Phase 2 — 会话体验增强
 
@@ -398,6 +400,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 
 | 日期 | 作者 | 摘要 |
 |------|------|------|
+| 2026-08-11 | Cursor Agent | Phase 1 落地：`/chat` SSE、会话上下文、新建对话、口令鉴权、下载需 jobId、上传限额、LLM 超时、localhost 绑定；更新 README/DEPLOY |
 | 2026-08-11 | Cursor Agent | Review：补充 P0/P1/P2 优化清单，调整风险与验收（鉴权、超时、截断提示等） |
 | 2026-08-11 | Cursor Agent | 确认 DeepSeek 支持多轮 messages 上下文；将「会话上下文 + 新建对话」提升为 Phase 1 必做 |
 | 2026-08-11 | Cursor Agent | 初版：确立 Agent Chat + 流式输出改版方向、架构、分期与维护约定 |

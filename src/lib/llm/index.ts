@@ -1,9 +1,18 @@
 import OpenAI from "openai";
 import { getSettings, type AppSettings } from "../db";
+import { normalizeModelId } from "./cursor-models";
 
 export type ChatMessage = {
   role: "system" | "user" | "assistant";
   content: string;
+};
+
+export type LlmCallOptions = {
+  temperature?: number;
+  json?: boolean;
+  modelOverride?: string;
+  timeoutMs?: number;
+  signal?: AbortSignal;
 };
 
 export type LlmResult = {
@@ -13,15 +22,39 @@ export type LlmResult = {
   demo: boolean;
 };
 
+const DEFAULT_TIMEOUT_MS = 90_000;
+
 function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/+$/, "");
+}
+
+function resolveModel(override?: string) {
+  const settings = getSettings();
+  return normalizeModelId(override || settings.model, settings.model || "deepseek-v4-flash");
+}
+
+function withTimeoutSignal(timeoutMs: number, outer?: AbortSignal) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new Error(`LLM 请求超时（${timeoutMs}ms）`)), timeoutMs);
+  const onAbort = () => controller.abort(outer?.reason || new Error("请求已取消"));
+  if (outer) {
+    if (outer.aborted) onAbort();
+    else outer.addEventListener("abort", onAbort, { once: true });
+  }
+  return {
+    signal: controller.signal,
+    clear: () => {
+      clearTimeout(timer);
+      if (outer) outer.removeEventListener("abort", onAbort);
+    },
+  };
 }
 
 function demoComplete(messages: ChatMessage[]): string {
   const lastUser = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
   const system = messages.find((m) => m.role === "system")?.content ?? "";
 
-  if (system.includes("语法") || system.includes("grammar") || lastUser.includes("待校验正文")) {
+  if (system.includes("语法") || system.includes("grammar") || lastUser.includes("待校验正文") || lastUser.includes("Word")) {
     const body = lastUser.includes("## 待校验正文")
       ? lastUser.split("## 待校验正文").pop() ?? lastUser
       : lastUser;
@@ -64,40 +97,124 @@ function demoComplete(messages: ChatMessage[]): string {
   });
 }
 
+async function* demoStream(messages: ChatMessage[]): AsyncGenerator<string> {
+  const text =
+    "（演示模式）正在结合参考文档与 Skill 分析你的请求…\n" +
+    "我会先说明处理思路，再生成可执行结果。\n" +
+    "当前未配置 API Key，输出为模拟流式内容。";
+  for (const chunk of text.match(/[\s\S]{1,12}/g) || [text]) {
+    yield chunk;
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  void messages;
+}
+
 export async function chatCompletion(
   messages: ChatMessage[],
-  options?: { temperature?: number; json?: boolean }
+  options?: LlmCallOptions
 ): Promise<LlmResult> {
   const settings = getSettings();
+  const model = resolveModel(options?.modelOverride);
 
   if (settings.provider === "demo" || !settings.apiKey.trim()) {
     return {
       content: demoComplete(messages),
-      model: settings.model,
+      model,
       provider: "demo",
       demo: true,
     };
   }
 
-  const client = new OpenAI({
-    apiKey: settings.apiKey,
-    baseURL: normalizeBaseUrl(settings.baseUrl) || undefined,
-  });
+  const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const { signal, clear } = withTimeoutSignal(timeoutMs, options?.signal);
 
-  const response = await client.chat.completions.create({
-    model: settings.model,
-    messages,
-    temperature: options?.temperature ?? 0.2,
-    ...(options?.json ? { response_format: { type: "json_object" as const } } : {}),
-  });
+  try {
+    const client = new OpenAI({
+      apiKey: settings.apiKey,
+      baseURL: normalizeBaseUrl(settings.baseUrl) || undefined,
+      timeout: timeoutMs,
+    });
 
-  const content = response.choices[0]?.message?.content ?? "";
-  return {
-    content,
-    model: response.model || settings.model,
-    provider: settings.provider,
-    demo: false,
-  };
+    const response = await client.chat.completions.create(
+      {
+        model,
+        messages,
+        temperature: options?.temperature ?? 0.2,
+        ...(options?.json ? { response_format: { type: "json_object" as const } } : {}),
+      },
+      { signal }
+    );
+
+    const content = response.choices[0]?.message?.content ?? "";
+    return {
+      content,
+      model: response.model || model,
+      provider: settings.provider,
+      demo: false,
+    };
+  } catch (error) {
+    if (signal.aborted) {
+      throw new Error(error instanceof Error ? error.message : "LLM 请求已取消或超时");
+    }
+    throw error;
+  } finally {
+    clear();
+  }
+}
+
+export async function* chatCompletionStream(
+  messages: ChatMessage[],
+  options?: LlmCallOptions
+): AsyncGenerator<{ text?: string; model: string; demo: boolean; provider: AppSettings["provider"] }> {
+  const settings = getSettings();
+  const model = resolveModel(options?.modelOverride);
+
+  if (settings.provider === "demo" || !settings.apiKey.trim()) {
+    for await (const text of demoStream(messages)) {
+      yield { text, model, demo: true, provider: "demo" };
+    }
+    return;
+  }
+
+  const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const { signal, clear } = withTimeoutSignal(timeoutMs, options?.signal);
+
+  try {
+    const client = new OpenAI({
+      apiKey: settings.apiKey,
+      baseURL: normalizeBaseUrl(settings.baseUrl) || undefined,
+      timeout: timeoutMs,
+    });
+
+    const stream = await client.chat.completions.create(
+      {
+        model,
+        messages,
+        temperature: options?.temperature ?? 0.3,
+        stream: true,
+      },
+      { signal }
+    );
+
+    for await (const chunk of stream) {
+      const text = chunk.choices[0]?.delta?.content;
+      if (text) {
+        yield {
+          text,
+          model: chunk.model || model,
+          demo: false,
+          provider: settings.provider,
+        };
+      }
+    }
+  } catch (error) {
+    if (signal.aborted) {
+      throw new Error(error instanceof Error ? error.message : "LLM 请求已取消或超时");
+    }
+    throw error;
+  } finally {
+    clear();
+  }
 }
 
 export async function testLlmConnection(): Promise<{
@@ -107,13 +224,14 @@ export async function testLlmConnection(): Promise<{
   model: string;
 }> {
   const settings = getSettings();
+  const model = resolveModel();
   if (settings.provider === "demo" || !settings.apiKey.trim()) {
     return {
       ok: true,
       message:
         "当前为演示模式。请在 .env.local 设置 DEEPSEEK_API_KEY，或在本页保存 Key 后测试。",
       demo: true,
-      model: settings.model,
+      model,
     };
   }
 
@@ -123,7 +241,7 @@ export async function testLlmConnection(): Promise<{
         { role: "system", content: "你是连通性测试助手，只返回 JSON。" },
         { role: "user", content: '请返回 {"pong": true}' },
       ],
-      { json: true, temperature: 0 }
+      { json: true, temperature: 0, timeoutMs: 20_000 }
     );
     return {
       ok: true,
@@ -136,7 +254,12 @@ export async function testLlmConnection(): Promise<{
       ok: false,
       message: error instanceof Error ? error.message : "连接失败",
       demo: false,
-      model: settings.model,
+      model,
     };
   }
+}
+
+export function isDemoMode() {
+  const settings = getSettings();
+  return settings.provider === "demo" || !settings.apiKey.trim();
 }

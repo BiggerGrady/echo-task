@@ -8,14 +8,23 @@ type Props = {
   hint: string;
   file: File | null;
   onFile: (file: File | null) => void;
+  maxBytes?: number;
 };
 
-export function FileDropzone({ accept, label, hint, file, onFile }: Props) {
+export function FileDropzone({ accept, label, hint, file, onFile, maxBytes }: Props) {
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
+  const [error, setError] = useState("");
 
   function pickFile(next: File | null) {
+    setError("");
+    if (next && maxBytes && next.size > maxBytes) {
+      setError(`文件过大，上限 ${Math.floor(maxBytes / (1024 * 1024))}MB`);
+      onFile(null);
+      if (inputRef.current) inputRef.current.value = "";
+      return;
+    }
     onFile(next);
   }
 
@@ -56,6 +65,7 @@ export function FileDropzone({ accept, label, hint, file, onFile }: Props) {
       />
       <p className="font-display text-xl text-ink">{label}</p>
       <p className="mt-1 text-sm text-ink-soft/70">{hint}</p>
+      {error && <p className="mt-2 text-sm text-clay">{error}</p>}
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <label
           htmlFor={inputId}

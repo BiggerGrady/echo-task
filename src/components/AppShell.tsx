@@ -5,8 +5,7 @@ import { usePathname } from "next/navigation";
 
 const NAV = [
   { href: "/", label: "总览", hint: "Overview" },
-  { href: "/word", label: "文档校验", hint: "Word" },
-  { href: "/excel", label: "Excel 处理", hint: "Sheets" },
+  { href: "/chat", label: "对话", hint: "Agent Chat" },
   { href: "/history", label: "处理历史", hint: "History" },
   { href: "/references", label: "参考文档", hint: "Knowledge" },
   { href: "/skills", label: "Skill 配置", hint: "Skills" },
