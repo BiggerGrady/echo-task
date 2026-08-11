@@ -54,10 +54,19 @@ function demoComplete(messages: ChatMessage[]): string {
   const lastUser = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
   const system = messages.find((m) => m.role === "system")?.content ?? "";
 
-  if (system.includes("语法") || system.includes("grammar") || lastUser.includes("待校验正文") || lastUser.includes("Word")) {
+  if (
+    system.includes("语法") ||
+    system.includes("grammar") ||
+    system.includes("校对") ||
+    lastUser.includes("待校验正文") ||
+    lastUser.includes("## 正文") ||
+    lastUser.toLowerCase().includes(".docx")
+  ) {
     const body = lastUser.includes("## 待校验正文")
       ? lastUser.split("## 待校验正文").pop() ?? lastUser
-      : lastUser;
+      : lastUser.includes("## 正文")
+        ? lastUser.split("## 正文").pop() ?? lastUser
+        : lastUser;
     const sentences = body
       .split(/[。！？\n]/)
       .map((s) => s.trim())
@@ -78,7 +87,13 @@ function demoComplete(messages: ChatMessage[]): string {
     });
   }
 
-  if (system.includes("Excel") || lastUser.includes("excel") || lastUser.includes("表格")) {
+  if (
+    system.includes("Excel") ||
+    system.includes("规划器") ||
+    lastUser.toLowerCase().includes("excel") ||
+    lastUser.includes("表格") ||
+    lastUser.toLowerCase().includes(".xlsx")
+  ) {
     return JSON.stringify({
       summary: "演示模式：将按示例规则返回处理计划，不会真实改写工作簿逻辑。",
       operations: [
