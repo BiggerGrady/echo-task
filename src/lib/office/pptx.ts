@@ -107,8 +107,9 @@ ${(input.sourceText || "（无附件，仅按用户需求）").slice(0, 12000)}`
   );
 
   if (result.demo) {
+    const parsed = parsePptOutline(result.content);
     return {
-      outline: fallbackOutline(input.instruction || "演示文稿"),
+      outline: parsed.parseOk ? parsed.outline : fallbackOutline(input.instruction || "演示文稿"),
       parseOk: true,
       demo: true,
       model: result.model,
