@@ -93,9 +93,21 @@ export function createSession(title = "新对话"): ChatSession {
   return getSession(id)!;
 }
 
-export function listSessions(limit = 50): ChatSession[] {
+export function listSessions(limit = 50, q?: string): ChatSession[] {
   ensureChatTables();
-  const rows = getDb()
+  const db = getDb();
+  if (q?.trim()) {
+    const rows = db
+      .prepare(
+        `SELECT * FROM chat_sessions
+         WHERE title LIKE ?
+         ORDER BY updated_at DESC
+         LIMIT ?`
+      )
+      .all(`%${q.trim()}%`, limit) as SessionRow[];
+    return rows.map(mapSession);
+  }
+  const rows = db
     .prepare(`SELECT * FROM chat_sessions ORDER BY updated_at DESC LIMIT ?`)
     .all(limit) as SessionRow[];
   return rows.map(mapSession);

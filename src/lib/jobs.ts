@@ -4,7 +4,7 @@ import path from "path";
 import { OUTPUTS_DIR, UPLOADS_DIR } from "./paths";
 import { randomUUID } from "crypto";
 
-export type JobType = "word" | "excel";
+export type JobType = "word" | "excel" | "pptx" | "report" | "analyze";
 export type JobStatus = "pending" | "succeeded" | "failed";
 
 export type Job = {
@@ -109,14 +109,66 @@ export function completeJob(
 }
 
 export function listJobs(type?: JobType): Job[] {
+  return listJobsPage({ type, limit: 500, offset: 0 }).items;
+}
+
+export function listJobsPage(input: {
+  type?: JobType;
+  limit?: number;
+  offset?: number;
+}): { items: Job[]; total: number; limit: number; offset: number } {
   ensureJobColumns();
   const db = getDb();
-  if (type) {
-    return (db
-      .prepare(`SELECT * FROM jobs WHERE type = ? ORDER BY created_at DESC`)
-      .all(type) as Row[]).map(mapRow);
+  const limit = Math.min(50, Math.max(1, input.limit ?? 10));
+  const offset = Math.max(0, input.offset ?? 0);
+  if (input.type) {
+    const total = (
+      db.prepare(`SELECT COUNT(*) AS n FROM jobs WHERE type = ?`).get(input.type) as { n: number }
+    ).n;
+    const items = (
+      db
+        .prepare(
+          `SELECT * FROM jobs WHERE type = ? ORDER BY created_at DESC LIMIT ? OFFSET ?`
+        )
+        .all(input.type, limit, offset) as Row[]
+    ).map(mapRow);
+    return { items, total, limit, offset };
   }
-  return (db.prepare(`SELECT * FROM jobs ORDER BY created_at DESC`).all() as Row[]).map(mapRow);
+  const total = (db.prepare(`SELECT COUNT(*) AS n FROM jobs`).get() as { n: number }).n;
+  const items = (
+    db
+      .prepare(`SELECT * FROM jobs ORDER BY created_at DESC LIMIT ? OFFSET ?`)
+      .all(limit, offset) as Row[]
+  ).map(mapRow);
+  return { items, total, limit, offset };
+}
+
+export function cleanupOldJobs(olderThanDays = 30): { deletedJobs: number; deletedFiles: number } {
+  ensureJobColumns();
+  const cutoff = new Date(Date.now() - olderThanDays * 24 * 60 * 60 * 1000).toISOString();
+  const rows = getDb()
+    .prepare(`SELECT * FROM jobs WHERE created_at < ? AND status != 'pending'`)
+    .all(cutoff) as Row[];
+  let deletedFiles = 0;
+  for (const row of rows) {
+    const job = mapRow(row);
+    for (const name of [job.inputFilename, job.outputFilename]) {
+      if (!name) continue;
+      for (const dir of [UPLOADS_DIR, OUTPUTS_DIR]) {
+        const p = path.join(dir, path.basename(name));
+        if (fs.existsSync(p)) {
+          try {
+            fs.unlinkSync(p);
+            deletedFiles += 1;
+          } catch {
+            // ignore
+          }
+        }
+      }
+    }
+    getDb().prepare(`DELETE FROM jobs WHERE id = ?`).run(job.id);
+  }
+  return { deletedJobs: rows.length, deletedFiles };
 }
 
 export function getJob(id: string): Job | null {

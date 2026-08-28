@@ -55,12 +55,73 @@ function demoComplete(messages: ChatMessage[]): string {
   const system = messages.find((m) => m.role === "system")?.content ?? "";
 
   if (
+    system.includes("合规制度整理") ||
+    lastUser.includes("## 规范原文")
+  ) {
+    return JSON.stringify({
+      title: "合规 Skill 草稿",
+      description: "演示模式整理结果，请人工审阅后启用。",
+      scope: "word",
+      content:
+        "# 合规 Skill：演示草稿\n\n## 适用范围\n演示模式。\n\n## 必须检查项（可勾选清单）\n1. 请核对来源条款\n\n## 禁止 / 敏感表述\n- 待补充\n\n## 格式与结构要求\n- 待补充\n\n## 输出要求（批注口径、严重级别）\n- warning：演示项\n\n## 来源与版本\n- 人工确认状态：draft\n",
+    });
+  }
+
+  if (
+    system.includes("内部汇报 PPT") ||
+    system.includes("PPT 策划") ||
+    lastUser.includes("## PPT Skill")
+  ) {
+    return JSON.stringify({
+      title: "本周工作汇报（演示）",
+      subtitle: "演示模式生成的大纲，配置 API Key 后可按真实材料策划",
+      slides: [
+        { layout: "cover", title: "本周工作汇报", subtitle: "内部汇报" },
+        {
+          layout: "bullets",
+          title: "本周进展",
+          bullets: ["完成核心需求", "补齐测试用例", "对齐下周计划"],
+        },
+        {
+          layout: "two_column",
+          title: "风险与对策",
+          left: ["外部接口依赖"],
+          right: ["准备降级方案"],
+        },
+        { layout: "closing", title: "谢谢", subtitle: "欢迎讨论" },
+      ],
+    });
+  }
+
+  if (
+    system.includes("合规审查") ||
+    system.includes("合规 Skill") ||
+    lastUser.includes("## 合规 Skill")
+  ) {
+    const body = lastUser.includes("## 正文")
+      ? lastUser.split("## 正文").pop() ?? lastUser
+      : lastUser;
+    const snippet = body.replace(/\s+/g, " ").trim().slice(0, 80) || "（正文片段）";
+    return JSON.stringify({
+      summary: "演示模式合规审查：请启用真实 API Key 后按 Skill 清单检查。",
+      issues: [
+        {
+          id: 1,
+          original: snippet,
+          suggestion: "对照合规 Skill 的必须检查项补全或改写该段。",
+          reason: "演示：命中「必须检查项」示例",
+          severity: "warning",
+        },
+      ],
+    });
+  }
+
+  if (
     system.includes("语法") ||
     system.includes("grammar") ||
     system.includes("校对") ||
     lastUser.includes("待校验正文") ||
-    lastUser.includes("## 正文") ||
-    lastUser.toLowerCase().includes(".docx")
+    lastUser.includes("## 正文")
   ) {
     const body = lastUser.includes("## 待校验正文")
       ? lastUser.split("## 待校验正文").pop() ?? lastUser
@@ -84,6 +145,48 @@ function demoComplete(messages: ChatMessage[]): string {
     return JSON.stringify({
       summary: "当前为演示模式。已按正文片段生成示例批注，配置 API Key 后可真实校对。",
       issues,
+    });
+  }
+
+  if (
+    system.includes("表格分析") ||
+    lastUser.includes("## 分析 Skill")
+  ) {
+    return JSON.stringify({
+      summary: "演示模式分析：样本范围内见空值与重复提示，原表未改。",
+      findings: [
+        {
+          id: 1,
+          sheet: "Sheet1",
+          kind: "missing",
+          detail: "请配置 API Key 后按真实样本统计空值比例。",
+          severity: "warning",
+        },
+        {
+          id: 2,
+          sheet: "Sheet1",
+          kind: "note",
+          detail: "演示：不会改写原工作簿。",
+          severity: "info",
+        },
+      ],
+      metrics: [{ label: "模式", value: "demo" }],
+    });
+  }
+
+  if (
+    system.includes("周报") ||
+    system.includes("工作总结") ||
+    lastUser.includes("## 报告 Skill")
+  ) {
+    return JSON.stringify({
+      title: "本周工作汇报（演示）",
+      subtitle: "演示模式生成的大纲",
+      sections: [
+        { heading: "本周进展", bullets: ["完成核心需求", "补齐测试"] },
+        { heading: "问题与风险", bullets: ["外部接口依赖，准备降级"] },
+        { heading: "下周计划", bullets: ["联调", "验收"] },
+      ],
     });
   }
 

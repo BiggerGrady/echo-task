@@ -7,7 +7,8 @@ export const runtime = "nodejs";
 export async function GET(req: NextRequest) {
   const denied = requireAuth(req);
   if (denied) return denied;
-  return NextResponse.json({ sessions: listSessions(50) });
+  const q = req.nextUrl.searchParams.get("q")?.trim() || "";
+  return NextResponse.json({ sessions: listSessions(50, q || undefined) });
 }
 
 export async function POST(req: NextRequest) {

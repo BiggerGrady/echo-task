@@ -1,0 +1,5 @@
+# Overlay for `pnpm dsh web --patch <absolute>/harness/echo-office/cordis.patch.yml`
+# Replace PLUGIN_PATH with this directory's src/index.ts absolute path.
+- id: echo-office-plugin
+  name: echo-office
+  plugin: PLUGIN_PATH/src/index.ts

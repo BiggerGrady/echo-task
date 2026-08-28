@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-type Scope = "global" | "word" | "excel";
+type Scope = "global" | "word" | "excel" | "pptx" | "report" | "analyze";
 
 type Item = {
   id: string;
@@ -20,6 +20,9 @@ const SCOPE_LABEL: Record<Scope, string> = {
   global: "全局",
   word: "文档校验",
   excel: "Excel 处理",
+  pptx: "PPT 制作",
+  report: "写报告",
+  analyze: "Excel 分析",
 };
 
 type Props = {
@@ -42,6 +45,10 @@ export function ConfigManager({ kind, title, subtitle }: Props) {
   const [form, setForm] = useState(emptyForm);
   const [file, setFile] = useState<File | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [ingestText, setIngestText] = useState("");
+  const [ingestUrl, setIngestUrl] = useState("");
+  const [ingestNote, setIngestNote] = useState("");
+  const [ingesting, setIngesting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
@@ -170,6 +177,41 @@ export function ConfigManager({ kind, title, subtitle }: Props) {
     await load();
   }
 
+  async function ingestSkill(e: React.FormEvent) {
+    e.preventDefault();
+    if (!ingestText.trim() && !ingestUrl.trim()) {
+      setError("请粘贴规范文案，或填写 URL");
+      return;
+    }
+    setIngesting(true);
+    setError("");
+    try {
+      const res = await fetch("/api/skills/ingest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: ingestText,
+          url: ingestUrl,
+          note: ingestNote,
+          save: true,
+          enabled: false,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "整理失败");
+      setInfo(data.hint || `已生成草稿：${data.skill?.title || data.draft?.title}`);
+      setIngestText("");
+      setIngestUrl("");
+      setIngestNote("");
+      if (data.skill) startEdit(data.skill);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "整理失败");
+    } finally {
+      setIngesting(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <header className="animate-rise">
@@ -177,6 +219,53 @@ export function ConfigManager({ kind, title, subtitle }: Props) {
         <p className="mt-3 max-w-2xl text-ink-soft/75">{subtitle}</p>
         <p className="mt-2 text-xs text-ink-soft/55">{storageHint}</p>
       </header>
+
+      {kind === "skills" && (
+        <form
+          onSubmit={ingestSkill}
+          className="panel space-y-4 rounded-2xl p-6 shadow-soft"
+        >
+          <p className="font-display text-2xl text-ink">从文案 / 链接生成合规 Skill</p>
+          <p className="text-sm text-ink-soft/70">
+            粘贴制度原文或提供 URL，模型会整理成检查清单草稿。默认不启用，请审阅后再点启用。
+          </p>
+          <label className="block text-sm">
+            <span className="mb-1 block text-ink-soft/70">规范 URL（可选）</span>
+            <input
+              value={ingestUrl}
+              onChange={(e) => setIngestUrl(e.target.value)}
+              placeholder="https://…"
+              className="w-full rounded-xl border border-[var(--line)] bg-white/70 px-3 py-2 outline-none focus:border-celadon"
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="mb-1 block text-ink-soft/70">粘贴规范文案</span>
+            <textarea
+              rows={5}
+              value={ingestText}
+              onChange={(e) => setIngestText(e.target.value)}
+              placeholder="把制度、敏感词、格式要求粘贴到这里…"
+              className="w-full rounded-xl border border-[var(--line)] bg-white/70 px-3 py-2 outline-none focus:border-celadon"
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="mb-1 block text-ink-soft/70">补充说明（可选）</span>
+            <input
+              value={ingestNote}
+              onChange={(e) => setIngestNote(e.target.value)}
+              placeholder="例如：适用于内部周报；检查口径要严格"
+              className="w-full rounded-xl border border-[var(--line)] bg-white/70 px-3 py-2 outline-none focus:border-celadon"
+            />
+          </label>
+          <button
+            type="submit"
+            disabled={ingesting}
+            className="rounded-xl bg-ink px-4 py-2 text-sm text-paper disabled:opacity-60"
+          >
+            {ingesting ? "整理中…" : "生成合规草稿"}
+          </button>
+        </form>
+      )}
 
       <form onSubmit={onSubmit} className="panel animate-rise-delay space-y-4 rounded-2xl p-6 shadow-soft">
         <div className="flex items-center justify-between gap-3">
@@ -209,6 +298,13 @@ export function ConfigManager({ kind, title, subtitle }: Props) {
               <option value="global">全局</option>
               <option value="word">仅文档校验</option>
               <option value="excel">仅 Excel 处理</option>
+              {kind === "skills" ? (
+                <>
+                  <option value="pptx">仅 PPT 制作</option>
+                  <option value="report">仅写报告</option>
+                  <option value="analyze">仅 Excel 分析</option>
+                </>
+              ) : null}
             </select>
           </label>
         </div>

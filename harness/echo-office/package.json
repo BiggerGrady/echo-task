@@ -1,0 +1,12 @@
+{
+  "name": "@echo-task/dsh-office",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Echo Task office tools as a DeepSeek Harness plugin (HTTP to local Echo).",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

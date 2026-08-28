@@ -4,9 +4,9 @@
 
 ## 功能
 
-- **Agent 对话**（主入口 `/chat`）：上传 Word / Excel 或纯文本，流式过程输出，多轮上下文，本轮模型切换，新建对话
-- **处理历史**：每次 Word / Excel 产物可回看下载
-- **参考文档 / Skill**：注入任务上下文
+- **Agent 对话**（主入口 `/chat`）：Word / Excel / 合规 / 表格分析 / 周报 / PPT；流式过程、多轮上下文、停止生成、会话搜索与重命名
+- **处理历史**：分页回看，可清理 30 天前记录
+- **参考文档 / Skill**：内置「内部汇报 PPT」「周报结构」「表格异常分析」
 - **模型入口**：DeepSeek（`deepseek-v4-flash` / `deepseek-v4-pro`）
 
 旧入口 `/word`、`/excel` 已重定向到 `/chat`。
@@ -40,6 +40,8 @@ cp .env.example .env.local
 | `LLM_MODEL` | 默认 `deepseek-v4-flash`（可选 `deepseek-v4-pro`） |
 | `LLM_PROVIDER` | 默认 `deepseek` |
 | `ECHO_ACCESS_PASSWORD` | 可选访问口令（Tunnel 外网强烈建议） |
+
+办公能力核心在 `src/lib/office`。DeepSeek Harness sidecar 说明见 [docs/HARNESS.md](./docs/HARNESS.md)。
 
 未配置 Key 时自动进入**演示模式**。也可在网页「模型设置」中本机填写（保存在本地 SQLite）。
 

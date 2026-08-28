@@ -1,18 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { deleteJob, listJobs, type JobType } from "@/lib/jobs";
+import { listJobsPage, type JobType } from "@/lib/jobs";
+import { HISTORY_PAGE_SIZE } from "@/lib/constants";
 
 export const runtime = "nodejs";
 
-export async function GET(req: NextRequest) {
-  const type = req.nextUrl.searchParams.get("type") as JobType | null;
-  const items = listJobs(type === "word" || type === "excel" ? type : undefined);
-  return NextResponse.json({ items });
-}
+const JOB_TYPES: JobType[] = ["word", "excel", "pptx", "report", "analyze"];
 
-export async function DELETE(req: NextRequest) {
-  const id = req.nextUrl.searchParams.get("id");
-  if (!id) return NextResponse.json({ error: "缺少 id" }, { status: 400 });
-  const ok = deleteJob(id);
-  if (!ok) return NextResponse.json({ error: "未找到" }, { status: 404 });
-  return NextResponse.json({ ok: true });
+export async function GET(req: NextRequest) {
+  const typeRaw = req.nextUrl.searchParams.get("type") as JobType | null;
+  const type = typeRaw && JOB_TYPES.includes(typeRaw) ? typeRaw : undefined;
+  const limit = Number(req.nextUrl.searchParams.get("limit") || HISTORY_PAGE_SIZE);
+  const offset = Number(req.nextUrl.searchParams.get("offset") || 0);
+  const page = listJobsPage({ type, limit, offset });
+  return NextResponse.json(page);
 }

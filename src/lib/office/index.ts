@@ -1,0 +1,11 @@
+export type { DocIssue, IngestedSkillDraft, PlannedOp, SheetSnapshot } from "./types";
+export { extractDocxText, issuesToComments, parseDocIssues, writeCommentedDocx } from "./docx";
+export { applyExcelOperations, parseExcelPlan, readWorkbookSnapshot } from "./xlsx";
+export { fetchUrlText, ingestComplianceSource, stripHtml } from "./ingest";
+export { checkCompliance } from "./compliance";
+export { outlinePptx, parsePptOutline, renderPptx, fallbackOutline } from "./pptx";
+export type { PptOutline, PptSlide } from "./pptx";
+export { outlineReport, parseReportOutline, draftDocx, fallbackReport } from "./report";
+export type { ReportOutline, ReportSection } from "./report";
+export { analyzeXlsx, parseAnalyzeResult, renderAnalysisDocx, analysisToReport } from "./analyze";
+export type { AnalyzeResult, AnalyzeFinding } from "./analyze";
