@@ -2,9 +2,9 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { MAX_UPLOAD_BYTES } from "@/lib/constants";
+import { CHAT_HISTORY_MESSAGE_LIMIT, MAX_UPLOAD_BYTES } from "@/lib/constants";
 
-type TaskType = "auto" | "word" | "excel" | "chat" | "compliance" | "pptx";
+type TaskType = "auto" | "word" | "excel" | "chat" | "compliance" | "pptx" | "report" | "analyze";
 
 type Session = {
   id: string;
@@ -58,7 +58,9 @@ export default function ChatClient() {
       initialType === "excel" ||
       initialType === "compliance" ||
       initialType === "pptx" ||
-      initialType === "chat"
+      initialType === "chat" ||
+      initialType === "report" ||
+      initialType === "analyze"
       ? initialType
       : "auto"
   );
@@ -67,8 +69,12 @@ export default function ChatClient() {
   const [sending, setSending] = useState(false);
   const [statusLine, setStatusLine] = useState("");
   const [error, setError] = useState("");
+  const [sessionQuery, setSessionQuery] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const canSend = useMemo(() => {
     if (sending) return false;
@@ -76,12 +82,13 @@ export default function ChatClient() {
     return text.trim().length > 0;
   }, [sending, file, text]);
 
-  const loadSessions = useCallback(async () => {
-    const res = await fetch("/api/chat/sessions");
+  const loadSessions = useCallback(async (q?: string) => {
+    const qs = (q ?? sessionQuery).trim();
+    const res = await fetch(`/api/chat/sessions${qs ? `?q=${encodeURIComponent(qs)}` : ""}`);
     if (!res.ok) return;
     const data = (await res.json()) as { sessions: Session[] };
     setSessions(data.sessions);
-  }, []);
+  }, [sessionQuery]);
 
   const loadSession = useCallback(async (id: string) => {
     const res = await fetch(`/api/chat/sessions/${id}`);
@@ -123,6 +130,39 @@ export default function ChatClient() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, statusLine]);
 
+  useEffect(() => {
+    const t = setTimeout(() => void loadSessions(sessionQuery), 250);
+    return () => clearTimeout(t);
+  }, [sessionQuery, loadSessions]);
+
+  function stopGenerating() {
+    abortRef.current?.abort();
+  }
+
+  async function renameSession(id: string, title: string) {
+    const next = title.trim().slice(0, 40);
+    if (!next) return;
+    const res = await fetch(`/api/chat/sessions/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: next }),
+    });
+    if (!res.ok) return;
+    setEditingId(null);
+    await loadSessions();
+  }
+
+  async function removeSession(id: string) {
+    if (!window.confirm("删除该会话及其消息？")) return;
+    const res = await fetch(`/api/chat/sessions/${id}`, { method: "DELETE" });
+    if (!res.ok) return;
+    if (sessionId === id) {
+      setSessionId(null);
+      setMessages([]);
+    }
+    await loadSessions();
+  }
+
   async function newChat() {
     const res = await fetch("/api/chat/sessions", {
       method: "POST",
@@ -150,6 +190,9 @@ export default function ChatClient() {
     setSending(true);
     setError("");
     setStatusLine("准备发送…");
+    abortRef.current?.abort();
+    const abort = new AbortController();
+    abortRef.current = abort;
 
     const userMsg: UiMessage = {
       id: `local-user-${Date.now()}`,
@@ -178,7 +221,7 @@ export default function ChatClient() {
     if (fileRef.current) fileRef.current.value = "";
 
     try {
-      const res = await fetch("/api/chat", { method: "POST", body: form });
+      const res = await fetch("/api/chat", { method: "POST", body: form, signal: abort.signal });
       if (!res.ok || !res.body) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(data.error || `请求失败 (${res.status})`);
@@ -210,7 +253,20 @@ export default function ChatClient() {
             setStatusLine(String(data.message || ""));
             setMessages((prev) =>
               prev.map((m) =>
-                m.id === assistantId ? { ...m, status: String(data.message || "") } : m
+                m.id === assistantId
+                  ? {
+                      ...m,
+                      status: String(data.message || ""),
+                      meta: {
+                        ...m.meta,
+                        ...(Array.isArray(data.skills) ? { usedSkills: data.skills } : {}),
+                        ...(Array.isArray(data.references)
+                          ? { usedReferences: data.references }
+                          : {}),
+                        ...(data.historyLimit ? { historyLimit: data.historyLimit } : {}),
+                      },
+                    }
+                  : m
               )
             );
           } else if (ev.event === "delta") {
@@ -236,15 +292,16 @@ export default function ChatClient() {
               )
             );
           } else if (ev.event === "error") {
-            setError(String(data.message || "处理失败"));
+            const msg = String(data.message || "处理失败");
+            if (msg !== "已停止生成") setError(msg);
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === assistantId
                   ? {
                       ...m,
                       streaming: false,
-                      content: m.content || `处理失败：${data.message}`,
-                      meta: { error: data.message },
+                      content: m.content || (msg === "已停止生成" ? "已停止生成。" : `处理失败：${msg}`),
+                      meta: { ...m.meta, error: msg },
                     }
                   : m
               )
@@ -260,18 +317,32 @@ export default function ChatClient() {
 
       await loadSessions();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "发送失败";
-      setError(msg);
-      setText(pendingText);
-      setFile(pendingFile);
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === assistantId
-            ? { ...m, streaming: false, content: m.content || `处理失败：${msg}` }
-            : m
-        )
-      );
+      const aborted =
+        (err instanceof DOMException && err.name === "AbortError") ||
+        (err instanceof Error && err.name === "AbortError");
+      if (aborted) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId
+              ? { ...m, streaming: false, content: m.content || "已停止生成。" }
+              : m
+          )
+        );
+      } else {
+        const msg = err instanceof Error ? err.message : "发送失败";
+        setError(msg);
+        setText(pendingText);
+        setFile(pendingFile);
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId
+              ? { ...m, streaming: false, content: m.content || `处理失败：${msg}` }
+              : m
+          )
+        );
+      }
     } finally {
+      if (abortRef.current === abort) abortRef.current = null;
       setSending(false);
       setStatusLine("");
     }
@@ -283,7 +354,7 @@ export default function ChatClient() {
         <div>
           <h1 className="font-display text-4xl text-ink">对话</h1>
           <p className="mt-1 text-sm text-ink-soft/70">
-            上传 Word / Excel 作参考，或直接用一句话生成内部汇报 PPT；同一会话保留上下文。
+            上传 Word / Excel 作参考，或直接生成周报 / 内部汇报 PPT；同一会话保留上下文。
           </p>
         </div>
         <button
@@ -304,30 +375,80 @@ export default function ChatClient() {
       <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
         <aside className="panel hidden max-h-full overflow-y-auto rounded-2xl p-3 lg:block">
           <p className="mb-2 px-2 text-xs uppercase tracking-wide text-ink-soft/50">会话</p>
+          <input
+            value={sessionQuery}
+            onChange={(e) => setSessionQuery(e.target.value)}
+            placeholder="搜索标题…"
+            className="mb-2 w-full rounded-xl border border-[var(--line)] bg-paper/80 px-3 py-1.5 text-sm outline-none focus:border-celadon"
+          />
           <div className="space-y-1">
             {sessions.length === 0 && (
               <p className="px-2 py-3 text-sm text-ink-soft/50">暂无会话</p>
             )}
             {sessions.map((s) => (
-              <button
+              <div
                 key={s.id}
-                type="button"
-                onClick={() => void loadSession(s.id)}
-                className={`w-full rounded-xl px-3 py-2 text-left text-sm transition ${
-                  sessionId === s.id
-                    ? "bg-celadon text-paper"
-                    : "text-ink-soft hover:bg-mist/50"
+                className={`group rounded-xl ${
+                  sessionId === s.id ? "bg-celadon text-paper" : "text-ink-soft hover:bg-mist/50"
                 }`}
               >
-                <div className="truncate font-medium">{s.title || "未命名"}</div>
-                <div
-                  className={`mt-0.5 text-[11px] ${
-                    sessionId === s.id ? "text-paper/70" : "text-ink-soft/45"
-                  }`}
-                >
-                  {new Date(s.updatedAt).toLocaleString()}
-                </div>
-              </button>
+                {editingId === s.id ? (
+                  <input
+                    autoFocus
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    onBlur={() => void renameSession(s.id, editTitle)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void renameSession(s.id, editTitle);
+                      }
+                      if (e.key === "Escape") setEditingId(null);
+                    }}
+                    className="w-full rounded-xl bg-paper px-3 py-2 text-sm text-ink outline-none"
+                  />
+                ) : (
+                  <div className="flex items-start gap-1">
+                    <button
+                      type="button"
+                      onClick={() => void loadSession(s.id)}
+                      className="min-w-0 flex-1 px-3 py-2 text-left text-sm"
+                    >
+                      <div className="truncate font-medium">{s.title || "未命名"}</div>
+                      <div
+                        className={`mt-0.5 text-[11px] ${
+                          sessionId === s.id ? "text-paper/70" : "text-ink-soft/45"
+                        }`}
+                      >
+                        {new Date(s.updatedAt).toLocaleString()}
+                      </div>
+                    </button>
+                    <div className="flex shrink-0 flex-col py-1 pr-1 opacity-0 group-hover:opacity-100">
+                      <button
+                        type="button"
+                        className="px-1 text-[11px] underline"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingId(s.id);
+                          setEditTitle(s.title);
+                        }}
+                      >
+                        改
+                      </button>
+                      <button
+                        type="button"
+                        className="px-1 text-[11px] underline"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void removeSession(s.id);
+                        }}
+                      >
+                        删
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             ))}
           </div>
         </aside>
@@ -335,7 +456,12 @@ export default function ChatClient() {
         <section className="panel flex min-h-0 flex-col rounded-2xl shadow-soft">
           <div className="flex items-center justify-between gap-2 border-b border-[var(--line)] px-4 py-3">
             <div className="text-sm text-ink-soft/70">
-              {sessionId ? "当前会话已启用上下文" : "发送后将自动创建会话"}
+              {sessionId
+                ? `当前会话已启用上下文 · 送模型最近 ${Math.min(
+                    messages.filter((m) => m.role !== "system").length,
+                    CHAT_HISTORY_MESSAGE_LIMIT
+                  )} / ${CHAT_HISTORY_MESSAGE_LIMIT} 条`
+                : "发送后将自动创建会话"}
             </div>
             <div className="rounded-full bg-mist/70 px-3 py-1 text-xs text-ink-soft">
               本轮：{model}
@@ -345,7 +471,7 @@ export default function ChatClient() {
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
             {messages.length === 0 && (
               <div className="flex h-full min-h-[200px] items-center justify-center text-center text-sm text-ink-soft/55">
-                上传 .docx / .xlsx 作参考，或输入「做一份本周汇报 PPT」开始
+                上传 .docx / .xlsx，或输入「写一份周报 / 做一份 PPT / 分析这张表」开始
               </div>
             )}
             {messages.map((m) => (
@@ -368,6 +494,25 @@ export default function ChatClient() {
                 <div className="whitespace-pre-wrap text-sm leading-relaxed">
                   {m.content || (m.streaming ? "…" : "")}
                 </div>
+                {m.role === "assistant" &&
+                ((Array.isArray(m.meta?.usedSkills) && (m.meta.usedSkills as string[]).length > 0) ||
+                  (Array.isArray(m.meta?.usedReferences) &&
+                    (m.meta.usedReferences as string[]).length > 0)) ? (
+                  <p className="mt-2 text-[11px] text-ink-soft/55">
+                    {Array.isArray(m.meta?.usedSkills) && (m.meta.usedSkills as string[]).length
+                      ? `Skill：${(m.meta.usedSkills as string[]).join("、")}`
+                      : ""}
+                    {Array.isArray(m.meta?.usedSkills) &&
+                    (m.meta.usedSkills as string[]).length &&
+                    Array.isArray(m.meta?.usedReferences) &&
+                    (m.meta.usedReferences as string[]).length
+                      ? " · "
+                      : ""}
+                    {Array.isArray(m.meta?.usedReferences) && (m.meta.usedReferences as string[]).length
+                      ? `参考：${(m.meta.usedReferences as string[]).join("、")}`
+                      : ""}
+                  </p>
+                ) : null}
                 {m.meta?.downloadUrl ? (
                   <a
                     href={String(m.meta.downloadUrl)}
@@ -419,6 +564,8 @@ export default function ChatClient() {
                 <option value="word">Word 校验</option>
                 <option value="compliance">合规校验</option>
                 <option value="excel">Excel 处理</option>
+                <option value="analyze">Excel 分析</option>
+                <option value="report">写报告</option>
                 <option value="pptx">PPT 制作</option>
                 <option value="chat">纯对话</option>
               </select>
@@ -471,7 +618,11 @@ export default function ChatClient() {
                 placeholder={
                   type === "pptx"
                     ? "例如：做一份本周工作汇报 PPT，覆盖进展、风险和下一步…"
-                    : "输入指令，例如：校验语法 / 按部门筛选并排序…"
+                    : type === "report"
+                      ? "例如：写一份本周工作汇报，覆盖进展、风险和下周计划…"
+                      : type === "analyze"
+                        ? "例如：分析空值、重复行和异常值，不要改表…"
+                        : "输入指令，例如：校验语法 / 按部门筛选并排序…"
                 }
                 className="min-h-[56px] flex-1 resize-none rounded-xl border border-[var(--line)] bg-paper/80 px-3 py-2 text-sm outline-none focus:border-celadon"
                 onKeyDown={(e) => {
@@ -482,11 +633,12 @@ export default function ChatClient() {
                 }}
               />
               <button
-                type="submit"
-                disabled={!canSend}
+                type={sending ? "button" : "submit"}
+                disabled={sending ? false : !canSend}
+                onClick={sending ? () => stopGenerating() : undefined}
                 className="rounded-xl bg-celadon px-5 text-sm font-medium text-paper disabled:opacity-50"
               >
-                {sending ? "…" : "发送"}
+                {sending ? "停止" : "发送"}
               </button>
             </div>
           </form>

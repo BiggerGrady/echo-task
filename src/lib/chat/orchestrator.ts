@@ -2,16 +2,20 @@ import ExcelJS from "exceljs";
 import fs from "fs";
 import path from "path";
 import { chatCompletion, chatCompletionStream, type ChatMessage, isDemoMode } from "../llm";
-import { buildReferenceContext } from "../references";
-import { buildSkillContext } from "../skills";
+import { buildReferenceContext, listReferenceTitles, type ReferenceScope } from "../references";
+import { listEnabledSkillTitles, buildSkillContext, type SkillScope } from "../skills";
 import {
+  analyzeXlsx,
   applyExcelOperations,
   checkCompliance,
+  draftDocx,
   extractDocxText,
   outlinePptx,
+  outlineReport,
   parseDocIssues,
   parseExcelPlan,
   readWorkbookSnapshot,
+  renderAnalysisDocx,
   renderPptx,
   writeCommentedDocx,
 } from "../office";
@@ -28,14 +32,22 @@ import {
   listRecentMessages,
   touchSession,
 } from "./sessions";
-import { completeJob, createJob } from "../jobs";
+import { completeJob, createJob, type JobType } from "../jobs";
 import { randomUUID } from "crypto";
 
-export type ChatTaskType = "auto" | "word" | "excel" | "chat" | "compliance" | "pptx";
+export type ChatTaskType =
+  | "auto"
+  | "word"
+  | "excel"
+  | "chat"
+  | "compliance"
+  | "pptx"
+  | "report"
+  | "analyze";
 
 export type ChatEvent =
   | { event: "meta"; data: Record<string, unknown> }
-  | { event: "status"; data: { stage: string; message: string } }
+  | { event: "status"; data: { stage: string; message: string } & Record<string, unknown> }
   | { event: "delta"; data: { text: string } }
   | { event: "result"; data: Record<string, unknown> }
   | { event: "error"; data: { message: string } }
@@ -45,14 +57,16 @@ function inferType(
   fileName?: string,
   explicit?: ChatTaskType,
   message?: string
-): "word" | "excel" | "chat" | "compliance" | "pptx" {
+): "word" | "excel" | "chat" | "compliance" | "pptx" | "report" | "analyze" {
   if (explicit && explicit !== "auto") {
     if (
       explicit === "word" ||
       explicit === "excel" ||
       explicit === "chat" ||
       explicit === "compliance" ||
-      explicit === "pptx"
+      explicit === "pptx" ||
+      explicit === "report" ||
+      explicit === "analyze"
     ) {
       return explicit;
     }
@@ -60,10 +74,61 @@ function inferType(
   const lower = (fileName || "").toLowerCase();
   const msg = message || "";
   if (/PPT|幻灯片|演示文稿|做\s*ppt|生成.*ppt/i.test(msg)) return "pptx";
+  if (/周报|写报告|起草.*报告|工作总结|写一份报告/.test(msg)) return "report";
+  if (lower.endsWith(".xlsx") && /分析|异常|空值|重复|洞察|结论/.test(msg)) return "analyze";
   if (lower.endsWith(".docx") && /合规|制度|规范检查/.test(msg)) return "compliance";
   if (lower.endsWith(".docx")) return "word";
   if (lower.endsWith(".xlsx")) return "excel";
   return "chat";
+}
+
+function skillScopeFor(
+  task: ReturnType<typeof inferType>
+): SkillScope {
+  if (task === "excel" || task === "analyze") return task === "analyze" ? "analyze" : "excel";
+  if (task === "pptx") return "pptx";
+  if (task === "report") return "report";
+  if (task === "word" || task === "compliance") return "word";
+  return "global";
+}
+
+function referenceScopeFor(task: ReturnType<typeof inferType>): ReferenceScope {
+  if (task === "excel" || task === "analyze") return "excel";
+  if (task === "word" || task === "compliance") return "word";
+  return "global";
+}
+
+function usedContext(task: ReturnType<typeof inferType>) {
+  const usedSkills = listEnabledSkillTitles(skillScopeFor(task));
+  const usedReferences = listReferenceTitles(referenceScopeFor(task));
+  return {
+    usedSkills,
+    usedReferences,
+    historyLimit: CHAT_HISTORY_MESSAGE_LIMIT,
+  };
+}
+
+function throwIfAborted(signal?: AbortSignal) {
+  if (signal?.aborted) {
+    const err = new Error("已停止生成");
+    err.name = "AbortError";
+    throw err;
+  }
+}
+
+function isAbortError(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+  const name = "name" in error ? String(error.name) : "";
+  const message = error instanceof Error ? error.message : "";
+  return name === "AbortError" || /已停止生成|aborted|AbortError/i.test(message);
+}
+
+function jobTypeFor(task: ReturnType<typeof inferType>): JobType | null {
+  if (task === "compliance") return "word";
+  if (task === "word" || task === "excel" || task === "pptx" || task === "report" || task === "analyze") {
+    return task;
+  }
+  return null;
 }
 
 function buildHistoryMessages(sessionId: string): ChatMessage[] {
@@ -89,16 +154,25 @@ export async function* runChat(input: {
   }
 
   const taskType = inferType(input.file?.name, input.type, input.message);
-  const job =
-    taskType === "pptx" ||
-    (input.file && (taskType === "word" || taskType === "excel" || taskType === "compliance"))
-      ? createJob({
-          type: taskType === "compliance" ? "word" : taskType === "pptx" ? "pptx" : taskType,
-          originalName: input.file?.name || `${(input.message || "演示文稿").slice(0, 30)}.pptx`,
-          inputFilename: input.file?.storedName || "",
-          instruction: input.message,
-        })
-      : null;
+  const mappedJobType = jobTypeFor(taskType);
+  const needsJob =
+    mappedJobType &&
+    (taskType === "pptx" ||
+      taskType === "report" ||
+      taskType === "analyze" ||
+      Boolean(input.file && (taskType === "word" || taskType === "excel" || taskType === "compliance")));
+  const job = needsJob
+    ? createJob({
+        type: mappedJobType,
+        originalName:
+          input.file?.name ||
+          `${(input.message || (taskType === "report" ? "工作汇报" : "演示文稿")).slice(0, 30)}.${
+            taskType === "pptx" ? "pptx" : "docx"
+          }`,
+        inputFilename: input.file?.storedName || "",
+        instruction: input.message,
+      })
+    : null;
 
   yield {
     event: "meta",
@@ -134,7 +208,23 @@ export async function* runChat(input: {
     }
 
     const history = buildHistoryMessages(session.id);
-    // history already includes the user message we just added; fine
+    const ctx = usedContext(taskType);
+    yield {
+      event: "status",
+      data: {
+        stage: "context",
+        message: [
+          ctx.usedSkills.length ? `Skill：${ctx.usedSkills.join("、")}` : "未启用专用 Skill",
+          ctx.usedReferences.length
+            ? `参考文档：${ctx.usedReferences.join("、")}`
+            : "无参考文档",
+          `上下文最多 ${ctx.historyLimit} 条`,
+        ].join(" · "),
+        skills: ctx.usedSkills,
+        references: ctx.usedReferences,
+        historyLimit: ctx.historyLimit,
+      },
+    };
 
     let assistantText = "";
     let resultPayload: Record<string, unknown> = {};
@@ -517,6 +607,153 @@ ${(sourceText || "（无附件，仅按用户需求）").slice(0, 8000)}`,
       assistantText =
         (assistantText ? `${assistantText.trim()}\n\n` : "") +
         `${summary}。可下载后在 PowerPoint / WPS 中继续编辑。`;
+    } else if (taskType === "report") {
+      throwIfAborted(input.signal);
+      let sourceText = "";
+      if (input.file) {
+        const lower = input.file.name.toLowerCase();
+        yield { event: "status", data: { stage: "extracting", message: "正在读取参考材料…" } };
+        if (lower.endsWith(".docx")) {
+          sourceText = await extractDocxText(input.file.buffer);
+        } else if (lower.endsWith(".xlsx")) {
+          const snapshot = await readWorkbookSnapshot(input.file.buffer);
+          sourceText = JSON.stringify(snapshot).slice(0, 12000);
+        }
+      }
+      const skills = buildSkillContext("report");
+      yield { event: "status", data: { stage: "streaming", message: "正在起草报告结构…" } };
+      const streamSys: ChatMessage = {
+        role: "system",
+        content: "你是周报助手。先用中文说明章节结构与要点（不要输出 JSON）。",
+      };
+      const streamUser: ChatMessage = {
+        role: "user",
+        content: `需求：${input.message || "请写一份本周工作汇报"}
+## 报告 Skill
+${skills}
+## 参考材料
+${(sourceText || "（无附件，仅按用户需求）").slice(0, 8000)}`,
+      };
+      for await (const chunk of chatCompletionStream(
+        [streamSys, ...history.slice(0, -1), streamUser],
+        { modelOverride: input.model, signal: input.signal }
+      )) {
+        throwIfAborted(input.signal);
+        if (chunk.text) {
+          assistantText += chunk.text;
+          yield { event: "delta", data: { text: chunk.text } };
+        }
+      }
+      yield { event: "status", data: { stage: "structuring", message: "生成报告大纲…" } };
+      const outlined = await outlineReport({
+        instruction: input.message,
+        sourceText,
+        modelOverride: input.model,
+        signal: input.signal,
+      });
+      yield { event: "status", data: { stage: "writing", message: "正在生成 Word…" } };
+      const buffer = await draftDocx(outlined.outline);
+      const safeTitle =
+        outlined.outline.title.replace(/[\\/:*?"<>|]+/g, "_").slice(0, 40) || "report";
+      const outputFilename = `${job!.id}-${safeTitle}.docx`;
+      fs.mkdirSync(OUTPUTS_DIR, { recursive: true });
+      fs.writeFileSync(path.join(OUTPUTS_DIR, outputFilename), buffer);
+      const summary = `已生成「${outlined.outline.title}」，共 ${outlined.outline.sections.length} 节`;
+      completeJob(job!.id, {
+        status: "succeeded",
+        outputFilename,
+        result: {
+          summary,
+          outline: outlined.outline,
+          demo: outlined.demo,
+          parseOk: outlined.parseOk,
+        },
+      });
+      resultPayload = {
+        summary,
+        outline: outlined.outline,
+        demo: outlined.demo,
+        parseOk: outlined.parseOk,
+        model: outlined.model,
+        downloadUrl: `/api/download/${encodeURIComponent(outputFilename)}?kind=output&jobId=${job!.id}`,
+        jobId: job!.id,
+      };
+      assistantText =
+        (assistantText ? `${assistantText.trim()}\n\n` : "") +
+        `${summary}。可下载后在 Word / WPS 中继续编辑。`;
+    } else if (taskType === "analyze") {
+      if (!input.file || !input.file.name.toLowerCase().endsWith(".xlsx")) {
+        throw new Error("表格分析请上传 Excel（.xlsx）");
+      }
+      throwIfAborted(input.signal);
+      yield { event: "status", data: { stage: "extracting", message: "正在读取表格快照（不改原表）…" } };
+      const snapshot = await readWorkbookSnapshot(input.file.buffer);
+      const snapshotJson = JSON.stringify(snapshot);
+      const truncated = snapshotJson.length > EXCEL_SNAPSHOT_JSON_LIMIT;
+      const skills = buildSkillContext("analyze");
+      yield { event: "status", data: { stage: "streaming", message: "正在分析异常与结论…" } };
+      const streamSys: ChatMessage = {
+        role: "system",
+        content: "你是表格分析助手。先用中文说明将检查哪些异常（不要输出 JSON）。不要改表。",
+      };
+      const streamUser: ChatMessage = {
+        role: "user",
+        content: `指令：${input.message || "请分析异常与结论"}
+文件：${input.file.name}
+## 分析 Skill
+${skills}
+## 表格快照
+${snapshotJson.slice(0, EXCEL_SNAPSHOT_JSON_LIMIT)}`,
+      };
+      for await (const chunk of chatCompletionStream(
+        [streamSys, ...history.slice(0, -1), streamUser],
+        { modelOverride: input.model, signal: input.signal }
+      )) {
+        throwIfAborted(input.signal);
+        if (chunk.text) {
+          assistantText += chunk.text;
+          yield { event: "delta", data: { text: chunk.text } };
+        }
+      }
+      yield { event: "status", data: { stage: "structuring", message: "整理分析结论…" } };
+      const analyzed = await analyzeXlsx({
+        sheets: snapshot,
+        fileName: input.file.name,
+        instruction: input.message,
+        modelOverride: input.model,
+        signal: input.signal,
+      });
+      yield { event: "status", data: { stage: "writing", message: "正在生成分析报告（原表未改）…" } };
+      const buffer = await renderAnalysisDocx(input.file.name, analyzed.analysis);
+      const outputFilename = `${job!.id}-分析结论.docx`;
+      fs.mkdirSync(OUTPUTS_DIR, { recursive: true });
+      fs.writeFileSync(path.join(OUTPUTS_DIR, outputFilename), buffer);
+      const summary = analyzed.analysis.summary;
+      completeJob(job!.id, {
+        status: "succeeded",
+        outputFilename,
+        result: {
+          summary,
+          findings: analyzed.analysis.findings,
+          metrics: analyzed.analysis.metrics,
+          demo: analyzed.demo,
+          truncated,
+        },
+      });
+      resultPayload = {
+        summary,
+        findings: analyzed.analysis.findings,
+        metrics: analyzed.analysis.metrics,
+        truncated,
+        demo: analyzed.demo,
+        parseOk: analyzed.parseOk,
+        model: analyzed.model,
+        downloadUrl: `/api/download/${encodeURIComponent(outputFilename)}?kind=output&jobId=${job!.id}`,
+        jobId: job!.id,
+      };
+      assistantText =
+        (assistantText ? `${assistantText.trim()}\n\n` : "") +
+        `已完成表格分析（未改原表）：${summary}`;
     } else {
       // pure chat
       yield { event: "status", data: { stage: "streaming", message: "模型回复中…" } };
@@ -538,6 +775,8 @@ ${(sourceText || "（无附件，仅按用户需求）").slice(0, 8000)}`,
       resultPayload = { summary: assistantText.slice(0, 200), demo };
     }
 
+    resultPayload = { ...resultPayload, ...ctx };
+
     addMessage({
       sessionId: session.id,
       role: "assistant",
@@ -548,13 +787,14 @@ ${(sourceText || "（无附件，仅按用户需求）").slice(0, 8000)}`,
     yield { event: "result", data: resultPayload };
     yield { event: "done", data: { ok: true } };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "处理失败";
+    const aborted = isAbortError(error);
+    const message = aborted ? "已停止生成" : error instanceof Error ? error.message : "处理失败";
     if (job) completeJob(job.id, { status: "failed", error: message });
     addMessage({
       sessionId: session.id,
       role: "assistant",
-      content: `处理失败：${message}`,
-      meta: { error: message },
+      content: aborted ? "已停止生成。" : `处理失败：${message}`,
+      meta: { error: message, aborted },
     });
     yield { event: "error", data: { message } };
     yield { event: "done", data: { ok: false } };

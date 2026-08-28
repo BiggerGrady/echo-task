@@ -4,7 +4,7 @@ import path from "path";
 import { SKILLS_DIR } from "./paths";
 import { randomUUID } from "crypto";
 
-export type SkillScope = "global" | "word" | "excel" | "pptx";
+export type SkillScope = "global" | "word" | "excel" | "pptx" | "report" | "analyze";
 
 export type Skill = {
   id: string;
@@ -146,29 +146,57 @@ export function deleteSkill(id: string): boolean {
   return true;
 }
 
-const PPTX_SKILL_TITLE = "内部汇报 PPT";
+const BUILTIN_SKILLS: Array<{
+  title: string;
+  description: string;
+  scope: SkillScope;
+  file: string;
+  fallback: string;
+}> = [
+  {
+    title: "内部汇报 PPT",
+    description: "内置 Skill：一句话/材料 → 大纲 JSON → 可编辑 pptx（源自 dsh-ppt SOP）",
+    scope: "pptx",
+    file: path.join("skills", "pptx-internal", "SKILL.md"),
+    fallback: "内部汇报 PPT：封面 → 要点 → 结论。每页不超过 6 条。",
+  },
+  {
+    title: "周报结构",
+    description: "内置 Skill：进展 / 风险 / 计划 / 需协调 → 大纲 → Word",
+    scope: "report",
+    file: path.join("skills", "report-weekly", "SKILL.md"),
+    fallback: "周报：本周进展 → 问题与风险 → 下周计划 → 需协调。一条一事，数字带来源。",
+  },
+  {
+    title: "表格异常分析",
+    description: "内置 Skill：空值/重复/异常 → 结论报告，不改原表",
+    scope: "analyze",
+    file: path.join("skills", "excel-analyze", "SKILL.md"),
+    fallback: "表格分析：检查空值、重复行、异常值；只出结论，不改原表。",
+  },
+];
 
 function ensureBuiltinSkills() {
   const db = getDb();
-  const existing = db
-    .prepare(`SELECT id FROM skills WHERE title = ?`)
-    .get(PPTX_SKILL_TITLE) as { id: string } | undefined;
-  if (existing) return;
-
-  const skillFile = path.join(process.cwd(), "skills", "pptx-internal", "SKILL.md");
-  let content = "";
-  try {
-    content = fs.readFileSync(skillFile, "utf8");
-  } catch {
-    content = "内部汇报 PPT：封面 → 要点 → 结论。每页不超过 6 条。";
+  for (const spec of BUILTIN_SKILLS) {
+    const existing = db
+      .prepare(`SELECT id FROM skills WHERE title = ?`)
+      .get(spec.title) as { id: string } | undefined;
+    if (existing) continue;
+    let content = spec.fallback;
+    try {
+      content = fs.readFileSync(path.join(process.cwd(), spec.file), "utf8");
+    } catch {
+      content = spec.fallback;
+    }
+    createSkill({
+      title: spec.title,
+      description: spec.description,
+      scope: spec.scope,
+      content,
+      enabled: true,
+    });
   }
-  createSkill({
-    title: PPTX_SKILL_TITLE,
-    description: "内置 Skill：一句话/材料 → 大纲 JSON → 可编辑 pptx（源自 dsh-ppt SOP）",
-    scope: "pptx",
-    content,
-    enabled: true,
-  });
 }
 
 export function buildSkillContext(scope: SkillScope): string {
@@ -180,4 +208,8 @@ export function buildSkillContext(scope: SkillScope): string {
         `### Skill ${i + 1}: ${s.title} [scope=${s.scope}]\n${s.description}\n${s.content.slice(0, 8000)}`
     )
     .join("\n\n");
+}
+
+export function listEnabledSkillTitles(scope: SkillScope): string[] {
+  return listSkills(scope, true).map((s) => s.title);
 }

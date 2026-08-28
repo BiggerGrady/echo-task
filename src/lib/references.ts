@@ -149,3 +149,7 @@ export function buildReferenceContext(scope: ReferenceScope): string {
     )
     .join("\n\n");
 }
+
+export function listReferenceTitles(scope?: ReferenceScope): string[] {
+  return listReferences(scope).map((d) => d.title);
+}

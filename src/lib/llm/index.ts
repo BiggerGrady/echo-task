@@ -150,6 +150,48 @@ function demoComplete(messages: ChatMessage[]): string {
   }
 
   if (
+    system.includes("表格分析") ||
+    lastUser.includes("## 分析 Skill")
+  ) {
+    return JSON.stringify({
+      summary: "演示模式分析：样本范围内见空值与重复提示，原表未改。",
+      findings: [
+        {
+          id: 1,
+          sheet: "Sheet1",
+          kind: "missing",
+          detail: "请配置 API Key 后按真实样本统计空值比例。",
+          severity: "warning",
+        },
+        {
+          id: 2,
+          sheet: "Sheet1",
+          kind: "note",
+          detail: "演示：不会改写原工作簿。",
+          severity: "info",
+        },
+      ],
+      metrics: [{ label: "模式", value: "demo" }],
+    });
+  }
+
+  if (
+    system.includes("周报") ||
+    system.includes("报告策划") ||
+    lastUser.includes("## 报告 Skill")
+  ) {
+    return JSON.stringify({
+      title: "本周工作汇报（演示）",
+      subtitle: "演示模式生成的大纲",
+      sections: [
+        { heading: "本周进展", bullets: ["完成核心需求", "补齐测试"] },
+        { heading: "问题与风险", bullets: ["外部接口依赖，准备降级"] },
+        { heading: "下周计划", bullets: ["联调", "验收"] },
+      ],
+    });
+  }
+
+  if (
     system.includes("Excel") ||
     system.includes("规划器") ||
     lastUser.toLowerCase().includes("excel") ||

@@ -128,4 +128,38 @@ export function apply(ctx: Ctx) {
     },
     execute: (args) => callEcho("render_pptx", args),
   });
+
+  ctx.tools.register({
+    name: "outline_report",
+    description: "按周报结构 Skill 生成报告大纲 JSON。",
+    parameters: {
+      instruction: { type: "string" },
+      text: { type: "string" },
+      inputFilename: { type: "string" },
+      fileName: { type: "string" },
+    },
+    execute: (args) => callEcho("outline_report", args),
+  });
+
+  ctx.tools.register({
+    name: "draft_docx",
+    description: "把报告大纲渲染为 Word 并写入 Echo outputs。",
+    parameters: {
+      outline: { type: "object", required: true },
+      outputBasename: { type: "string" },
+    },
+    execute: (args) => callEcho("draft_docx", args),
+  });
+
+  ctx.tools.register({
+    name: "analyze_xlsx",
+    description: "分析 uploads 中的 xlsx，出结论 Word，不改原表。",
+    parameters: {
+      inputFilename: { type: "string", required: true },
+      instruction: { type: "string" },
+      fileName: { type: "string" },
+      outputBasename: { type: "string" },
+    },
+    execute: (args) => callEcho("analyze_xlsx", args),
+  });
 }

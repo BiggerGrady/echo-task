@@ -23,7 +23,7 @@ Echo Task 是本地可运行的文档/表格智能处理工作台：
 
 ### 2.1 交互形态
 
-- 主入口：`/chat`（Agent 对话：流式 SSE、会话上下文、新建对话、本轮模型覆盖；含 Word / Excel / 合规 / PPT）
+- 主入口：`/chat`（Agent 对话：流式 SSE、会话上下文、新建/搜索/重命名/删除、停止生成、本轮模型覆盖；含 Word / Excel / 分析 / 合规 / 报告 / PPT）
 - `/word`、`/excel` 重定向到 `/chat?type=word|excel`
 - 全局默认模型仍在 `/settings`；对话内可临时覆盖本轮模型
 - 无 API Key 时 Demo 模式可演示流式 UI
@@ -36,16 +36,16 @@ Echo Task 是本地可运行的文档/表格智能处理工作台：
 | Agent Chat | `src/app/chat/` | `POST /api/chat`（SSE） | `src/lib/chat/orchestrator.ts` |
 | 会话 | 对话侧栏 | `/api/chat/sessions` | `src/lib/chat/sessions.ts` |
 | Word / Excel（兼容） | 重定向 | `POST /api/word/validate`、`/api/excel/process`（deprecated） | `src/lib/documents/*` |
-| PPT 制作 | `/chat?type=pptx` | `POST /api/chat` `type=pptx`；`outline_pptx` / `render_pptx` | `src/lib/office/pptx.ts` + 内置 Skill `skills/pptx-internal/SKILL.md` |
+| PPT 制作 | `/chat?type=pptx` | `POST /api/chat` `type=pptx` | `src/lib/office/pptx.ts` + Skill `skills/pptx-internal/SKILL.md` |
+| 写报告 | `/chat?type=report` | `outline_report` / `draft_docx` | `src/lib/office/report.ts` + Skill `skills/report-weekly/SKILL.md` |
+| Excel 分析 | `/chat?type=analyze` | `analyze_xlsx`（不改原表） | `src/lib/office/analyze.ts` + Skill `skills/excel-analyze/SKILL.md` |
 | LLM | 设置页 + 对话覆盖 | `/api/settings`、`/api/models` | `src/lib/llm/index.ts`（含 stream + 超时） |
-| 历史 | `/history` | `/api/jobs` | `src/lib/jobs.ts`（含 `pptx`） |
+| 历史 | `/history` | `/api/jobs`（分页）+ `POST /api/jobs/cleanup` | `src/lib/jobs.ts` |
 | 访问口令 | `/login` | `/api/auth/*` | `src/lib/auth.ts` + `src/middleware.ts` |
 
 ### 2.3 已知缺口（下一阶段）
 
-- 办公多场景扩展：写报告、Excel 分析（见 §11；PPT 已落地）
-- DeepSeek Harness sidecar（见 §11，实验路径）
-- 停止生成、会话重命名/搜索、历史分页与磁盘清理
+- DeepSeek Harness sidecar（见 §11，实验路径；H3 仍暂缓）
 - API Key 仍明文存 SQLite（外网优先用 `.env.local`）
 
 ---
@@ -300,17 +300,17 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 
 - [x] 合规 Skill：从粘贴文案生成草稿（URL 抓取为加分）
 - [x] 合规校验路径：Skill 清单 → issues → 批注
-- [ ] Excel 分析（结论型，可不改表）
-- [ ] 写报告大纲（先大纲，后渲染 docx）
+- [x] Excel 分析（结论型，不改原表 → 分析报告 docx）
+- [x] 写报告大纲（先大纲，后 `draft_docx`）
 - [x] PPT：先大纲 JSON，再 `render_pptx` 产出可编辑 `.pptx`（内置 Skill，见 §11.10）
 - [x] 抽取 `src/lib/office/*` 供编排器与未来插件复用
 
 ### Phase 3 — 会话与体验增强
 
-- [ ] 更完整的会话侧栏（重命名、删除、搜索）
-- [ ] 上下文窗口策略可视化；停止生成
-- [ ] 流式过程中展示引用了哪些参考文档/Skill
-- [ ] 历史分页与磁盘清理
+- [x] 更完整的会话侧栏（重命名、删除、搜索）
+- [x] 上下文窗口条数展示；停止生成
+- [x] 流式过程中展示引用了哪些参考文档/Skill
+- [x] 历史分页与清理 30 天前记录
 
 ### Phase H — DeepSeek Harness sidecar（实验，见 §11）
 
@@ -318,7 +318,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 - [x] H1 office-core 抽库（`src/lib/office` + `POST /api/office/tools`）
 - [x] H2 dsh 办公插件 + `echo-office` profile（`harness/echo-office`，HTTP 调 Echo）
 - [ ] H3（可选）Echo 桥接 headless
-- [x] H4 部分对齐：PPT `outline_pptx` / `render_pptx` 已挂到 `echo-office` 插件（报告/分析仍待）
+- [x] H4 办公 tools 对齐：合规 / PPT / 报告 / 分析已挂到 `echo-office`（H3 仍暂缓）
 
 ---
 
@@ -429,7 +429,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 |--------|--------|----------------|------------------|
 | **P0 主线** | 合规 Skill 从文案生成 | 否 | `/skills` + `POST /api/skills/ingest` |
 | **P0 主线** | 合规校验进 `/chat` | 否 | orchestrator + `office/compliance` |
-| **P1 主线** | Excel 分析、写报告大纲 | 否 | orchestrator 新 type 或 tools 风格函数 |
+| **P1 主线** | Excel 分析、写报告大纲 | 否 | **已落地** `type=analyze` / `type=report` |
 | **P1 主线** | PPT 大纲 → 渲染 pptx | 否 | **已落地** `type=pptx` + `office/pptx.ts` |
 | **P1 预备** | 抽 `src/lib/office/*` | 否（为 H 铺路） | 从 `documents/*`、orchestrator 下沉 |
 | **实验** | H0–H2 Harness sidecar | 是 | 独立 dsh profile + 插件包 |
@@ -468,8 +468,8 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 | 合规校验 | 合规清单 Skill | `compliance_check` + 批注 | Echo |
 | 合规 Skill 生产 | — | `ingest_compliance_source`（抓取/整理） | Echo |
 | Excel 处理 | 可选 | `read_xlsx_snapshot` + `apply_excel_ops` | Echo（已有） |
-| Excel 分析 | 异常定义 Skill | `analyze_xlsx` | Echo |
-| 写报告 | 周报结构 Skill | `merge_sources` + `draft_docx` | Echo |
+| Excel 分析 | 异常定义 Skill（内置「表格异常分析」） | `analyze_xlsx` | Echo（已落地） |
+| 写报告 | 周报结构 Skill（内置「周报结构」） | `outline_report` + `draft_docx` | Echo（已落地） |
 | 写 PPT | 页序规范 Skill（内置「内部汇报 PPT」） | `outline_pptx` → `render_pptx` | Echo（已落地） |
 | 多步试错 / 回放 | 同上 | 同上，经 dsh loop | Harness（H2+） |
 
@@ -489,8 +489,8 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 
 #### P2-c 分析与写作
 
-- `analyze_xlsx`：结论 JSON/文案，可选不改表  
-- 报告：先大纲，再 `draft_docx`（未做）  
+- `analyze_xlsx`：结论 JSON + 分析报告 docx，**不改原表**（已做）  
+- 报告：先 `outline_report`，再 `draft_docx`（已做）  
 - PPT：先 `outline_pptx`，再 `render_pptx`（已做；见 §11.10）
 
 #### P2-d 抽库
@@ -507,7 +507,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 | **H1** | 插件 `defineTool` 包装 office/* | 插件内调用与 Echo 同函数出相同批注文件 |
 | **H2** | `echo-office` profile：只挂办公 tools，shell 关或强审批 | 自然语言完成「校对 + 改表」 |
 | **H3** | Echo 开关 → headless；结果进 jobs | 历史页能下到 Harness 产物（可选） |
-| **H4** | 合规/报告/PPT tools 同步到插件 | PPT 已同步；报告/分析仍待 |
+| **H4** | 合规/报告/PPT/分析 tools 同步到插件 | 已同步；H3 仍暂缓 |
 
 ### 11.6 合规 Skill 生成规格（摘要）
 
@@ -577,6 +577,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 
 | 日期 | 作者 | 摘要 |
 |------|------|------|
+| 2026-08-28 | Cursor Agent | Phase 2/3 收口：Excel 分析（不改表）、写报告 `draft_docx`、会话搜索/重命名/删除、停止生成、上下文 Skill 展示、历史分页与 30 天清理 |
 | 2026-08-28 | Cursor Agent | PPT 制作落地：调研 dsh-ppt 等 Skill 后引入内置「内部汇报 PPT」；`type=pptx` 大纲→pptxgenjs 渲染；office/harness tools `outline_pptx`/`render_pptx`；见 §11.10 |
 | 2026-08-28 | Cursor Agent | 执行接入计划：office-core、合规 Skill 生成、chat 合规校验、`/api/office/tools`、Harness 插件草稿与 `docs/HARNESS.md` |
 | 2026-08-28 | Cursor Agent | §11.6.1：支持从 URL/文案/规范文件生成合规 Skill（草稿→人工确认→启用），明确代码抓取与 LLM 整理分工 |

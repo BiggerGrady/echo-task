@@ -5,17 +5,23 @@ import ExcelJS from "exceljs";
 import { requireAuth } from "@/lib/auth";
 import { OUTPUTS_DIR, UPLOADS_DIR } from "@/lib/paths";
 import {
+  analyzeXlsx,
   applyExcelOperations,
   checkCompliance,
+  draftDocx,
   extractDocxText,
   ingestComplianceSource,
   outlinePptx,
+  outlineReport,
   parsePptOutline,
+  parseReportOutline,
   readWorkbookSnapshot,
+  renderAnalysisDocx,
   renderPptx,
   writeCommentedDocx,
   type PlannedOp,
   type PptOutline,
+  type ReportOutline,
 } from "@/lib/office";
 
 export const runtime = "nodejs";
@@ -40,7 +46,7 @@ export async function POST(req: NextRequest) {
     issues?: Parameters<typeof writeCommentedDocx>[1];
     operations?: PlannedOp[];
     outputBasename?: string;
-    outline?: PptOutline | string;
+    outline?: PptOutline | ReportOutline | string;
   };
 
   const tool = body.tool || "";
@@ -151,6 +157,71 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    if (tool === "outline_report") {
+      let sourceText = body.text || "";
+      if (!sourceText && body.inputFilename) {
+        const buffer = readUpload(body.inputFilename);
+        const name = (body.fileName || body.inputFilename).toLowerCase();
+        if (name.endsWith(".xlsx")) {
+          sourceText = JSON.stringify(await readWorkbookSnapshot(buffer)).slice(0, 12000);
+        } else {
+          sourceText = await extractDocxText(buffer);
+        }
+      }
+      const result = await outlineReport({
+        instruction: body.instruction || body.note || "",
+        sourceText,
+      });
+      return NextResponse.json({ ok: true, tool, result });
+    }
+
+    if (tool === "draft_docx") {
+      if (body.outline == null) throw new Error("需要 outline");
+      const raw = typeof body.outline === "string" ? body.outline : JSON.stringify(body.outline);
+      const parsed = parseReportOutline(raw);
+      const buffer = await draftDocx(parsed.outline);
+      const outName = body.outputBasename || `office-${Date.now()}-report.docx`;
+      const safeName = path.basename(outName).replace(/\.docx$/i, "") + ".docx";
+      fs.mkdirSync(OUTPUTS_DIR, { recursive: true });
+      fs.writeFileSync(path.join(OUTPUTS_DIR, safeName), buffer);
+      return NextResponse.json({
+        ok: true,
+        tool,
+        result: {
+          outputFilename: safeName,
+          title: parsed.outline.title,
+          sectionCount: parsed.outline.sections.length,
+          parseOk: parsed.parseOk,
+        },
+      });
+    }
+
+    if (tool === "analyze_xlsx") {
+      const buffer = readUpload(body.inputFilename);
+      const sheets = await readWorkbookSnapshot(buffer);
+      const analyzed = await analyzeXlsx({
+        sheets,
+        fileName: body.fileName || body.inputFilename || "workbook.xlsx",
+        instruction: body.instruction,
+      });
+      const outName = body.outputBasename || `office-${Date.now()}-分析结论.docx`;
+      const safeName = path.basename(outName).replace(/\.docx$/i, "") + ".docx";
+      const doc = await renderAnalysisDocx(
+        body.fileName || body.inputFilename || "workbook.xlsx",
+        analyzed.analysis
+      );
+      fs.mkdirSync(OUTPUTS_DIR, { recursive: true });
+      fs.writeFileSync(path.join(OUTPUTS_DIR, safeName), doc);
+      return NextResponse.json({
+        ok: true,
+        tool,
+        result: {
+          ...analyzed,
+          outputFilename: safeName,
+        },
+      });
+    }
+
     return NextResponse.json(
       {
         error: "未知 tool",
@@ -163,6 +234,9 @@ export async function POST(req: NextRequest) {
           "apply_excel_ops",
           "outline_pptx",
           "render_pptx",
+          "outline_report",
+          "draft_docx",
+          "analyze_xlsx",
         ],
       },
       { status: 400 }

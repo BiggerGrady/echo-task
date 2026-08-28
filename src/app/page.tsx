@@ -4,7 +4,7 @@ const FEATURES = [
   {
     href: "/chat",
     title: "Agent 对话",
-    copy: "统一处理 Word / Excel / PPT：流式过程、多轮上下文、本轮模型切换。",
+    copy: "统一处理 Word / Excel / 报告 / PPT：流式过程、多轮上下文、本轮模型切换。",
   },
   {
     href: "/history",
@@ -34,7 +34,7 @@ export default function HomePage() {
         <div className="relative max-w-2xl animate-rise">
           <p className="font-display text-5xl leading-none tracking-tight md:text-7xl">Echo Task</p>
           <p className="mt-5 text-lg text-paper/75 md:text-xl">
-            用对话完成 Word 校验、Excel 变换与内部汇报 PPT，默认对接 DeepSeek，支持流式输出与会话上下文。
+            用对话完成 Word 校验、Excel 处理与分析、周报和内部汇报 PPT，默认对接 DeepSeek。
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Link
@@ -42,6 +42,12 @@ export default function HomePage() {
               className="rounded-xl bg-celadon px-5 py-2.5 text-sm font-medium text-paper hover:bg-celadon-bright"
             >
               开始对话
+            </Link>
+            <Link
+              href="/chat?type=report"
+              className="rounded-xl border border-paper/20 px-5 py-2.5 text-sm text-paper/90 hover:bg-paper/10"
+            >
+              写一份周报
             </Link>
             <Link
               href="/chat?type=pptx"
