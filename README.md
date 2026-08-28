@@ -41,6 +41,8 @@ cp .env.example .env.local
 | `LLM_PROVIDER` | 默认 `deepseek` |
 | `ECHO_ACCESS_PASSWORD` | 可选访问口令（Tunnel 外网强烈建议） |
 
+办公能力核心在 `src/lib/office`。DeepSeek Harness sidecar 说明见 [docs/HARNESS.md](./docs/HARNESS.md)。
+
 未配置 Key 时自动进入**演示模式**。也可在网页「模型设置」中本机填写（保存在本地 SQLite）。
 
 ## 数据

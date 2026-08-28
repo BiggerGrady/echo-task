@@ -55,6 +55,42 @@ function demoComplete(messages: ChatMessage[]): string {
   const system = messages.find((m) => m.role === "system")?.content ?? "";
 
   if (
+    system.includes("合规制度整理") ||
+    lastUser.includes("## 规范原文")
+  ) {
+    return JSON.stringify({
+      title: "合规 Skill 草稿",
+      description: "演示模式整理结果，请人工审阅后启用。",
+      scope: "word",
+      content:
+        "# 合规 Skill：演示草稿\n\n## 适用范围\n演示模式。\n\n## 必须检查项（可勾选清单）\n1. 请核对来源条款\n\n## 禁止 / 敏感表述\n- 待补充\n\n## 格式与结构要求\n- 待补充\n\n## 输出要求（批注口径、严重级别）\n- warning：演示项\n\n## 来源与版本\n- 人工确认状态：draft\n",
+    });
+  }
+
+  if (
+    system.includes("合规审查") ||
+    system.includes("合规 Skill") ||
+    lastUser.includes("## 合规 Skill")
+  ) {
+    const body = lastUser.includes("## 正文")
+      ? lastUser.split("## 正文").pop() ?? lastUser
+      : lastUser;
+    const snippet = body.replace(/\s+/g, " ").trim().slice(0, 80) || "（正文片段）";
+    return JSON.stringify({
+      summary: "演示模式合规审查：请启用真实 API Key 后按 Skill 清单检查。",
+      issues: [
+        {
+          id: 1,
+          original: snippet,
+          suggestion: "对照合规 Skill 的必须检查项补全或改写该段。",
+          reason: "演示：命中「必须检查项」示例",
+          severity: "warning",
+        },
+      ],
+    });
+  }
+
+  if (
     system.includes("语法") ||
     system.includes("grammar") ||
     system.includes("校对") ||

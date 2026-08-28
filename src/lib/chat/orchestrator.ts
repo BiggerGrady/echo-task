@@ -1,11 +1,18 @@
-import mammoth from "mammoth";
 import ExcelJS from "exceljs";
 import fs from "fs";
 import path from "path";
 import { chatCompletion, chatCompletionStream, type ChatMessage, isDemoMode } from "../llm";
 import { buildReferenceContext } from "../references";
 import { buildSkillContext } from "../skills";
-import { injectCommentsIntoDocx } from "../documents/word-comments";
+import {
+  applyExcelOperations,
+  checkCompliance,
+  extractDocxText,
+  parseDocIssues,
+  parseExcelPlan,
+  readWorkbookSnapshot,
+  writeCommentedDocx,
+} from "../office";
 import {
   CHAT_HISTORY_MESSAGE_LIMIT,
   EXCEL_SNAPSHOT_JSON_LIMIT,
@@ -22,7 +29,7 @@ import {
 import { completeJob, createJob } from "../jobs";
 import { randomUUID } from "crypto";
 
-export type ChatTaskType = "auto" | "word" | "excel" | "chat";
+export type ChatTaskType = "auto" | "word" | "excel" | "chat" | "compliance";
 
 export type ChatEvent =
   | { event: "meta"; data: Record<string, unknown> }
@@ -32,180 +39,27 @@ export type ChatEvent =
   | { event: "error"; data: { message: string } }
   | { event: "done"; data: { ok: boolean } };
 
-type GrammarIssue = {
-  id: number;
-  original: string;
-  suggestion: string;
-  reason: string;
-  severity: "error" | "warning" | "info";
-};
-
-type PlannedOp =
-  | { type: "filter"; sheet: string; column: string; op: "eq" | "neq" | "contains"; value: string }
-  | { type: "sort"; sheet: string; column: string; direction: "asc" | "desc" }
-  | { type: "rename_column"; sheet: string; from: string; to: string }
-  | { type: "add_column"; sheet: string; name: string; formula: "copy" | "uppercase" | "trim"; source: string }
-  | { type: "keep_columns"; sheet: string; columns: string[] }
-  | { type: "note"; description: string };
-
-function inferType(fileName?: string, explicit?: ChatTaskType): "word" | "excel" | "chat" {
+function inferType(
+  fileName?: string,
+  explicit?: ChatTaskType,
+  message?: string
+): "word" | "excel" | "chat" | "compliance" {
   if (explicit && explicit !== "auto") {
-    if (explicit === "word" || explicit === "excel" || explicit === "chat") return explicit;
+    if (
+      explicit === "word" ||
+      explicit === "excel" ||
+      explicit === "chat" ||
+      explicit === "compliance"
+    ) {
+      return explicit;
+    }
   }
   const lower = (fileName || "").toLowerCase();
+  const msg = message || "";
+  if (lower.endsWith(".docx") && /合规|制度|规范检查/.test(msg)) return "compliance";
   if (lower.endsWith(".docx")) return "word";
   if (lower.endsWith(".xlsx")) return "excel";
   return "chat";
-}
-
-function parseIssues(raw: string): { summary: string; issues: GrammarIssue[]; parseOk: boolean } {
-  try {
-    const parsed = JSON.parse(raw) as { summary?: string; issues?: GrammarIssue[] };
-    return {
-      summary: parsed.summary ?? "校验完成",
-      issues: Array.isArray(parsed.issues) ? parsed.issues : [],
-      parseOk: true,
-    };
-  } catch {
-    return { summary: raw.slice(0, 300), issues: [], parseOk: false };
-  }
-}
-
-function parsePlan(raw: string): { summary: string; operations: PlannedOp[]; parseOk: boolean } {
-  try {
-    const parsed = JSON.parse(raw) as { summary?: string; operations?: PlannedOp[] };
-    return {
-      summary: parsed.summary ?? "处理完成",
-      operations: Array.isArray(parsed.operations) ? parsed.operations : [],
-      parseOk: true,
-    };
-  } catch {
-    return { summary: raw.slice(0, 300), operations: [], parseOk: false };
-  }
-}
-
-async function readWorkbookSnapshot(buffer: Buffer) {
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(buffer as unknown as ExcelJS.Buffer);
-  const sheets: Array<{ name: string; headers: string[]; rows: Record<string, string>[] }> = [];
-  workbook.eachSheet((sheet) => {
-    const rows: string[][] = [];
-    sheet.eachRow({ includeEmpty: false }, (row) => {
-      const values = row.values as Array<string | number | boolean | Date | null | undefined>;
-      const cells = values.slice(1).map((v) => {
-        if (v == null) return "";
-        if (v instanceof Date) return v.toISOString();
-        return String(v);
-      });
-      rows.push(cells);
-    });
-    if (!rows.length) {
-      sheets.push({ name: sheet.name, headers: [], rows: [] });
-      return;
-    }
-    const headers = rows[0].map((h, i) => h || `列${i + 1}`);
-    const dataRows = rows.slice(1, 31).map((r) => {
-      const obj: Record<string, string> = {};
-      headers.forEach((h, i) => {
-        obj[h] = r[i] ?? "";
-      });
-      return obj;
-    });
-    sheets.push({ name: sheet.name, headers, rows: dataRows });
-  });
-  return sheets;
-}
-
-function applyOperations(workbook: ExcelJS.Workbook, operations: PlannedOp[]) {
-  for (const op of operations) {
-    if (op.type === "note") continue;
-    const sheet = workbook.getWorksheet(op.sheet) ?? workbook.worksheets[0];
-    if (!sheet) continue;
-    const headerRow = sheet.getRow(1);
-    const headers: string[] = [];
-    headerRow.eachCell({ includeEmpty: true }, (cell, col) => {
-      headers[col - 1] = String(cell.value ?? `列${col}`);
-    });
-
-    if (op.type === "rename_column") {
-      const idx = headers.findIndex((h) => h === op.from);
-      if (idx >= 0) headerRow.getCell(idx + 1).value = op.to;
-      continue;
-    }
-    if (op.type === "add_column") {
-      const sourceIdx = headers.findIndex((h) => h === op.source);
-      const newCol = headers.length + 1;
-      headerRow.getCell(newCol).value = op.name;
-      if (sourceIdx >= 0) {
-        sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-          if (rowNumber === 1) return;
-          const raw = String(row.getCell(sourceIdx + 1).value ?? "");
-          let next = raw;
-          if (op.formula === "uppercase") next = raw.toUpperCase();
-          if (op.formula === "trim") next = raw.trim();
-          row.getCell(newCol).value = next;
-        });
-      }
-      continue;
-    }
-    if (op.type === "keep_columns") {
-      const keep = new Set(op.columns);
-      const removeIdx: number[] = [];
-      headers.forEach((h, i) => {
-        if (!keep.has(h)) removeIdx.push(i + 1);
-      });
-      removeIdx.reverse().forEach((col) => sheet.spliceColumns(col, 1));
-      continue;
-    }
-    if (op.type === "filter") {
-      const colIdx = headers.findIndex((h) => h === op.column) + 1;
-      if (colIdx <= 0) continue;
-      const toDelete: number[] = [];
-      sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-        if (rowNumber === 1) return;
-        const val = String(row.getCell(colIdx).value ?? "");
-        let keep = true;
-        if (op.op === "eq") keep = val === op.value;
-        if (op.op === "neq") keep = val !== op.value;
-        if (op.op === "contains") keep = val.includes(op.value);
-        if (!keep) toDelete.push(rowNumber);
-      });
-      toDelete.reverse().forEach((n) => sheet.spliceRows(n, 1));
-      continue;
-    }
-    if (op.type === "sort") {
-      const colIdx = headers.findIndex((h) => h === op.column);
-      if (colIdx < 0) continue;
-      const data: ExcelJS.CellValue[][] = [];
-      sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-        if (rowNumber === 1) return;
-        const values: ExcelJS.CellValue[] = [];
-        row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-          values[colNumber - 1] = cell.value;
-        });
-        data.push(values);
-      });
-      data.sort((a, b) => {
-        const av = String(a[colIdx] ?? "");
-        const bv = String(b[colIdx] ?? "");
-        return op.direction === "asc" ? av.localeCompare(bv, "zh") : bv.localeCompare(av, "zh");
-      });
-      while (sheet.rowCount > 1) sheet.spliceRows(2, 1);
-      data.forEach((vals, i) => {
-        const row = sheet.getRow(i + 2);
-        vals.forEach((v, c) => {
-          row.getCell(c + 1).value = v;
-        });
-        row.commit();
-      });
-    }
-  }
-}
-
-function severityLabel(severity: GrammarIssue["severity"]) {
-  if (severity === "error") return "错误";
-  if (severity === "warning") return "警告";
-  return "建议";
 }
 
 function buildHistoryMessages(sessionId: string): ChatMessage[] {
@@ -230,11 +84,11 @@ export async function* runChat(input: {
     session = createSession(titleSeed.slice(0, 40));
   }
 
-  const taskType = inferType(input.file?.name, input.type);
+  const taskType = inferType(input.file?.name, input.type, input.message);
   const job =
-    input.file && (taskType === "word" || taskType === "excel")
+    input.file && (taskType === "word" || taskType === "excel" || taskType === "compliance")
       ? createJob({
-          type: taskType,
+          type: taskType === "compliance" ? "word" : taskType,
           originalName: input.file.name,
           inputFilename: input.file.storedName,
           instruction: input.message,
@@ -280,10 +134,88 @@ export async function* runChat(input: {
     let assistantText = "";
     let resultPayload: Record<string, unknown> = {};
 
-    if (taskType === "word" && input.file) {
+    if (taskType === "compliance" && input.file) {
+      if (!input.file.name.toLowerCase().endsWith(".docx")) {
+        throw new Error("合规校验请上传 Word（.docx）");
+      }
+      yield { event: "status", data: { stage: "extracting", message: "正在提取正文以做合规检查…" } };
+      const fullText = await extractDocxText(input.file.buffer);
+      const truncated = fullText.length > WORD_TEXT_LIMIT;
+      const text = fullText.slice(0, WORD_TEXT_LIMIT);
+      yield {
+        event: "status",
+        data: {
+          stage: "context",
+          message: truncated
+            ? `正文较长，已截断至 ${WORD_TEXT_LIMIT} 字`
+            : "已加载启用中的合规 Skill",
+        },
+      };
+      yield { event: "status", data: { stage: "streaming", message: "对照 Skill 审查中…" } };
+      const skills = buildSkillContext("word");
+      const streamSys: ChatMessage = {
+        role: "system",
+        content: "你是合规助手。先用中文说明将按哪些检查项审查（不要输出 JSON）。",
+      };
+      const streamUser: ChatMessage = {
+        role: "user",
+        content: `说明：${input.message || "请按合规 Skill 检查"}\n文件：${input.file.name}\n## Skill\n${skills}\n## 正文\n${text.slice(0, 8000)}`,
+      };
+      for await (const chunk of chatCompletionStream(
+        [streamSys, ...history.slice(0, -1), streamUser],
+        { modelOverride: input.model, signal: input.signal }
+      )) {
+        if (chunk.text) {
+          assistantText += chunk.text;
+          yield { event: "delta", data: { text: chunk.text } };
+        }
+      }
+      yield { event: "status", data: { stage: "structuring", message: "生成合规问题列表…" } };
+      const checked = await checkCompliance({
+        text,
+        fileName: input.file.name,
+        instruction: input.message,
+      });
+      if (!checked.parseOk) throw new Error("合规结果不是合法 JSON，请重试");
+      yield { event: "status", data: { stage: "writing", message: "正在写入合规批注…" } };
+      const { annotated, commentedCount } = await writeCommentedDocx(
+        input.file.buffer,
+        checked.issues,
+        checked.summary
+      );
+      const outputFilename = `${job!.id}-${path.basename(input.file.name, path.extname(input.file.name))}-合规批注.docx`;
+      fs.mkdirSync(OUTPUTS_DIR, { recursive: true });
+      fs.writeFileSync(path.join(OUTPUTS_DIR, outputFilename), annotated);
+      completeJob(job!.id, {
+        status: "succeeded",
+        outputFilename,
+        result: {
+          summary: checked.summary,
+          issues: checked.issues,
+          demo,
+          truncated,
+          commentedCount,
+          kind: "compliance",
+        },
+      });
+      resultPayload = {
+        summary: checked.summary,
+        issues: checked.issues,
+        truncated,
+        demo,
+        model: checked.model,
+        downloadUrl: `/api/download/${encodeURIComponent(outputFilename)}?kind=output&jobId=${job!.id}`,
+        jobId: job!.id,
+        commentedCount,
+        kind: "compliance",
+      };
+      assistantText =
+        (assistantText ? `${assistantText.trim()}\n\n` : "") +
+        `已完成合规校验：${checked.summary}`;
+    } else if (taskType === "word" && input.file) {
+
       yield { event: "status", data: { stage: "extracting", message: "正在提取 Word 正文…" } };
-      const extracted = await mammoth.extractRawText({ buffer: input.file.buffer });
-      const fullText = extracted.value.trim();
+      const fullText = await extractDocxText(input.file.buffer);
       const truncated = fullText.length > WORD_TEXT_LIMIT;
       const text = fullText.slice(0, WORD_TEXT_LIMIT);
       const references = buildReferenceContext("word");
@@ -353,35 +285,17 @@ ${text}`,
         { json: true, temperature: 0.1, modelOverride: input.model, signal: input.signal }
       );
 
-      const { summary, issues, parseOk } = parseIssues(structured.content);
+      const { summary, issues, parseOk } = parseDocIssues(structured.content);
       if (!parseOk) {
         throw new Error("模型返回的校对结果不是合法 JSON，请重试");
       }
 
       yield { event: "status", data: { stage: "writing", message: "正在写入 Word 批注…" } };
-      const comments = [
-        ...issues.map((issue) => {
-          const locate = (issue.original || "").trim();
-          return {
-            locate,
-            body: [
-              locate ? `【定位】${locate}` : "",
-              `[${severityLabel(issue.severity)}] ${issue.reason || "需修订"}`,
-              issue.suggestion ? `建议：${issue.suggestion}` : "",
-            ]
-              .filter(Boolean)
-              .join("\n"),
-          };
-        }),
-        { locate: "", body: `【总评】${summary}` },
-      ].map((c, i) => ({
-        id: i,
-        body: c.body,
-        author: "Echo Task",
-        initials: "ET",
-      }));
-
-      const annotated = await injectCommentsIntoDocx(input.file.buffer, comments);
+      const { annotated, commentedCount } = await writeCommentedDocx(
+        input.file.buffer,
+        issues,
+        summary
+      );
       const outputFilename = `${job!.id}-${path.basename(input.file.name, path.extname(input.file.name))}-批注.docx`;
       fs.mkdirSync(OUTPUTS_DIR, { recursive: true });
       fs.writeFileSync(path.join(OUTPUTS_DIR, outputFilename), annotated);
@@ -389,7 +303,7 @@ ${text}`,
       completeJob(job!.id, {
         status: "succeeded",
         outputFilename,
-        result: { summary, issues, demo, truncated, commentedCount: comments.length },
+        result: { summary, issues, demo, truncated, commentedCount },
       });
 
       resultPayload = {
@@ -400,7 +314,7 @@ ${text}`,
         model: structured.model,
         downloadUrl: `/api/download/${encodeURIComponent(outputFilename)}?kind=output&jobId=${job!.id}`,
         jobId: job!.id,
-        commentedCount: comments.length,
+        commentedCount,
       };
       assistantText =
         (assistantText ? `${assistantText.trim()}\n\n` : "") +
@@ -476,13 +390,13 @@ ${snapshotPayload}`,
         { json: true, temperature: 0.1, modelOverride: input.model, signal: input.signal }
       );
 
-      const { summary, operations, parseOk } = parsePlan(structured.content);
+      const { summary, operations, parseOk } = parseExcelPlan(structured.content);
       if (!parseOk) throw new Error("模型返回的处理计划不是合法 JSON，请重试");
 
       yield { event: "status", data: { stage: "writing", message: "正在生成处理后的 Excel…" } };
       const workbook = new ExcelJS.Workbook();
       await workbook.xlsx.load(input.file.buffer as unknown as ExcelJS.Buffer);
-      if (!demo) applyOperations(workbook, operations);
+      if (!demo) applyExcelOperations(workbook, operations);
       else {
         const note = workbook.addWorksheet("Echo处理说明");
         note.getCell("A1").value = "演示模式";

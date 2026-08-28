@@ -4,7 +4,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { useSearchParams } from "next/navigation";
 import { MAX_UPLOAD_BYTES } from "@/lib/constants";
 
-type TaskType = "auto" | "word" | "excel" | "chat";
+type TaskType = "auto" | "word" | "excel" | "chat" | "compliance";
 
 type Session = {
   id: string;
@@ -54,7 +54,11 @@ export default function ChatClient() {
   const [text, setText] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [type, setType] = useState<TaskType>(
-    initialType === "word" || initialType === "excel" ? initialType : "auto"
+    initialType === "word" ||
+      initialType === "excel" ||
+      initialType === "compliance"
+      ? initialType
+      : "auto"
   );
   const [model, setModel] = useState("deepseek-v4-flash");
   const [demo, setDemo] = useState(false);
@@ -411,6 +415,7 @@ export default function ChatClient() {
               >
                 <option value="auto">自动识别</option>
                 <option value="word">Word 校验</option>
+                <option value="compliance">合规校验</option>
                 <option value="excel">Excel 处理</option>
                 <option value="chat">纯对话</option>
               </select>

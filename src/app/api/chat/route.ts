@@ -40,7 +40,11 @@ export async function POST(req: NextRequest) {
   }
 
   const type: ChatTaskType =
-    typeRaw === "word" || typeRaw === "excel" || typeRaw === "chat" || typeRaw === "auto"
+    typeRaw === "word" ||
+    typeRaw === "excel" ||
+    typeRaw === "chat" ||
+    typeRaw === "auto" ||
+    typeRaw === "compliance"
       ? typeRaw
       : "auto";
 

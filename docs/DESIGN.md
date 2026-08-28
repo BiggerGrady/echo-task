@@ -298,11 +298,11 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 
 ### Phase 2 — 办公能力扩展（不依赖 Harness）
 
-- [ ] 合规 Skill：从粘贴文案生成草稿（URL 抓取为加分）
-- [ ] 合规校验路径：Skill 清单 → issues → 批注
+- [x] 合规 Skill：从粘贴文案生成草稿（URL 抓取为加分）
+- [x] 合规校验路径：Skill 清单 → issues → 批注
 - [ ] Excel 分析（结论型，可不改表）
 - [ ] 写报告 / PPT 大纲（先大纲，后渲染文件）
-- [ ] 抽取 `src/lib/office/*` 供编排器与未来插件复用
+- [x] 抽取 `src/lib/office/*` 供编排器与未来插件复用
 
 ### Phase 3 — 会话与体验增强
 
@@ -313,9 +313,9 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 
 ### Phase H — DeepSeek Harness sidecar（实验，见 §11）
 
-- [ ] H0 本机体验并 pin 版本
-- [ ] H1 office-core 抽库
-- [ ] H2 dsh 办公插件 + `echo-office` profile
+- [x] H0 本机体验并 pin 版本（说明见 `docs/HARNESS.md`）
+- [x] H1 office-core 抽库（`src/lib/office` + `POST /api/office/tools`）
+- [x] H2 dsh 办公插件 + `echo-office` profile（`harness/echo-office`，HTTP 调 Echo）
 - [ ] H3（可选）Echo 桥接 headless
 - [ ] H4 与 Phase 2 能力在 Harness 侧对齐
 
@@ -553,7 +553,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 
 | 日期 | 作者 | 摘要 |
 |------|------|------|
-| 2026-08-28 | Cursor Agent | 同步 main（Chat Phase 1 已合并）；重梳 §11 Harness 接入计划：主线 Phase 2 与实验 Phase H 分轨、执行顺序与场景映射 |
+| 2026-08-28 | Cursor Agent | 执行接入计划：office-core、合规 Skill 生成、chat 合规校验、`/api/office/tools`、Harness 插件草稿与 `docs/HARNESS.md` |
 | 2026-08-28 | Cursor Agent | §11.6.1：支持从 URL/文案/规范文件生成合规 Skill（草稿→人工确认→启用），明确代码抓取与 LLM 整理分工 |
 | 2026-08-28 | Cursor Agent | 增补 §11：Harness 更新至 v0.1.2-alpha.1；日常办公多场景 sidecar 接入设计、Tools/Skills 分工与 H0–H4 分期 |
 | 2026-08-11 | Cursor Agent | Phase 1 落地：`/chat` SSE、会话上下文、新建对话、口令鉴权、下载需 jobId、上传限额、LLM 超时、localhost 绑定；更新 README/DEPLOY |
