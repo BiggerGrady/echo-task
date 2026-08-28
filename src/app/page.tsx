@@ -2,14 +2,9 @@ import Link from "next/link";
 
 const FEATURES = [
   {
-    href: "/word",
-    title: "文档校验",
-    copy: "上传 Word，检查语法并在原文档写入批注。",
-  },
-  {
-    href: "/excel",
-    title: "Excel 处理",
-    copy: "用自然语言描述规则，输出处理后的表格文件。",
+    href: "/chat",
+    title: "Agent 对话",
+    copy: "统一处理 Word / Excel：流式过程、多轮上下文、本轮模型切换。",
   },
   {
     href: "/history",
@@ -39,14 +34,14 @@ export default function HomePage() {
         <div className="relative max-w-2xl animate-rise">
           <p className="font-display text-5xl leading-none tracking-tight md:text-7xl">Echo Task</p>
           <p className="mt-5 text-lg text-paper/75 md:text-xl">
-            把 Word 校验与 Excel 变换放进同一张工作台，默认对接 DeepSeek 模型。
+            用对话完成 Word 校验与 Excel 变换，默认对接 DeepSeek，支持流式输出与会话上下文。
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Link
-              href="/word"
+              href="/chat"
               className="rounded-xl bg-celadon px-5 py-2.5 text-sm font-medium text-paper hover:bg-celadon-bright"
             >
-              开始文档校验
+              开始对话
             </Link>
             <Link
               href="/settings"

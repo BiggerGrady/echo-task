@@ -9,6 +9,7 @@ import {
   type AppSettings,
   DEFAULT_SETTINGS,
 } from "@/lib/db";
+import { requireAuth } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -40,11 +41,16 @@ function readStoredSettings(): AppSettings {
   }
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const denied = requireAuth(req);
+  if (denied) return denied;
   return NextResponse.json(getSettingsPublic());
 }
 
 export async function PUT(req: NextRequest) {
+  const denied = requireAuth(req);
+  if (denied) return denied;
+
   const body = (await req.json()) as Partial<AppSettings> & {
     clearApiKey?: boolean;
   };

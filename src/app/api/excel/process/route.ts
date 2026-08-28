@@ -5,10 +5,16 @@ import path from "path";
 import { UPLOADS_DIR } from "@/lib/paths";
 import { randomUUID } from "crypto";
 import { completeJob, createJob } from "@/lib/jobs";
+import { requireAuth } from "@/lib/auth";
+import { MAX_UPLOAD_BYTES } from "@/lib/constants";
 
 export const runtime = "nodejs";
 
+/** @deprecated Prefer POST /api/chat with type=excel */
 export async function POST(req: NextRequest) {
+  const denied = requireAuth(req);
+  if (denied) return denied;
+
   const form = await req.formData();
   const file = form.get("file");
   const instruction = String(form.get("instruction") || "").trim();
@@ -18,6 +24,12 @@ export async function POST(req: NextRequest) {
   }
   if (!file.name.toLowerCase().endsWith(".xlsx")) {
     return NextResponse.json({ error: "目前仅支持 .xlsx" }, { status: 400 });
+  }
+  if (file.size > MAX_UPLOAD_BYTES) {
+    return NextResponse.json(
+      { error: `文件过大，上限 ${Math.floor(MAX_UPLOAD_BYTES / (1024 * 1024))}MB` },
+      { status: 400 }
+    );
   }
   if (!instruction) {
     return NextResponse.json({ error: "请填写自然语言处理指令" }, { status: 400 });

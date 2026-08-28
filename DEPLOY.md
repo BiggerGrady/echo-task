@@ -23,6 +23,7 @@ cp .env.example .env.local
 # DEEPSEEK_API_KEY=你的key
 # LLM_PROVIDER=deepseek
 # LLM_MODEL=deepseek-v4-flash
+# ECHO_ACCESS_PASSWORD=可选访问口令（Tunnel 外网强烈建议）
 
 # 3. 安装依赖并生产启动
 npm install
@@ -40,6 +41,12 @@ chmod +x scripts/start-production.sh scripts/start-tunnel.sh
 ```
 
 ## 二、暴露公网（Cloudflare Tunnel，免绑卡试用）
+
+**安全建议（必读）**
+
+1. 生产启动默认只监听 `127.0.0.1:3000`（`npm run start:prod`），由 Tunnel 本地转发  
+2. 在 `.env.local` 设置访问口令：`ECHO_ACCESS_PASSWORD=你的口令`  
+3. 外网打开站点会跳转 `/login`；API 无口令返回 401  
 
 ### 方式 A：临时公网链接（最快）
 

@@ -112,7 +112,7 @@ export default function HistoryPage() {
         <p className="text-sm text-ink-soft/60">加载中…</p>
       ) : items.length === 0 ? (
         <p className="panel rounded-2xl p-6 text-sm text-ink-soft/70">
-          暂无处理记录。去「文档校验」或「Excel 处理」跑一次任务后，会自动出现在这里。
+          暂无处理记录。去「对话」上传 Word / Excel 跑一次任务后，会自动出现在这里。
         </p>
       ) : (
         <section className="space-y-3">
