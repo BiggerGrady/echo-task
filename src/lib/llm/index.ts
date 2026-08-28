@@ -121,8 +121,7 @@ function demoComplete(messages: ChatMessage[]): string {
     system.includes("grammar") ||
     system.includes("校对") ||
     lastUser.includes("待校验正文") ||
-    lastUser.includes("## 正文") ||
-    lastUser.toLowerCase().includes(".docx")
+    lastUser.includes("## 正文")
   ) {
     const body = lastUser.includes("## 待校验正文")
       ? lastUser.split("## 待校验正文").pop() ?? lastUser
@@ -177,7 +176,7 @@ function demoComplete(messages: ChatMessage[]): string {
 
   if (
     system.includes("周报") ||
-    system.includes("报告策划") ||
+    system.includes("工作总结") ||
     lastUser.includes("## 报告 Skill")
   ) {
     return JSON.stringify({
