@@ -52,7 +52,7 @@ cp .env.example .env.local
 
 ## 公网部署
 
-推荐 **Mac Mini 本机运行 + Cloudflare Tunnel**。生产默认绑定 `127.0.0.1`，请配置 `ECHO_ACCESS_PASSWORD`。步骤见 [DEPLOY.md](./DEPLOY.md)。
+推荐 **Mac Mini 本机运行 + Cloudflare Tunnel**（无需云服务器/信用卡）。步骤见 [DEPLOY.md](./DEPLOY.md)。
 
 ## 设计文档（持续维护）
 
