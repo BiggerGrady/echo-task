@@ -385,17 +385,6 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 
 ---
 
-## 10. 文档与代码同步清单
-
-每次改动请核对：
-
-- [ ] 更新本文「现状 / 方案 / 分期 / Review / 变更日志」
-- [ ] 若影响部署，更新 `DEPLOY.md`
-- [ ] 若影响启动脚本，更新 `README.md`
-- [ ] 新增环境变量时更新 `.env.example`
-
----
-
 ## 11. DeepSeek Harness 接入设计（2026-08-28）
 
 > 目标：在「日常办公多场景 Agent」方向上，明确 Harness **是否用、怎么用、先写什么代码、哪些用自然语言**。  
