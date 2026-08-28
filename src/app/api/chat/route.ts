@@ -44,7 +44,8 @@ export async function POST(req: NextRequest) {
     typeRaw === "excel" ||
     typeRaw === "chat" ||
     typeRaw === "auto" ||
-    typeRaw === "compliance"
+    typeRaw === "compliance" ||
+    typeRaw === "pptx"
       ? typeRaw
       : "auto";
 

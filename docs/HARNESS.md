@@ -28,6 +28,8 @@ npx @deepseek-ai/dsh@0.1.1-rc.2 web
    - `compliance_check`
    - `add_word_comments`
    - `apply_excel_ops`
+   - `outline_pptx`
+   - `render_pptx`
 2. 本仓库 `harness/echo-office` 是 dsh 插件草稿：每个 tool `execute` 里 `fetch` Echo。
 3. 启动 Echo（`npm run start:prod` 或 `npm run dev`），再：
 

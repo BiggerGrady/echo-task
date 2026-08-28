@@ -13,6 +13,9 @@ function contentTypeFor(ext: string) {
   if (ext === ".xlsx") {
     return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
   }
+  if (ext === ".pptx") {
+    return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+  }
   return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 }
 

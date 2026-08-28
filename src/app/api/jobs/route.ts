@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 
 export async function GET(req: NextRequest) {
   const type = req.nextUrl.searchParams.get("type") as JobType | null;
-  const items = listJobs(type === "word" || type === "excel" ? type : undefined);
+  const items = listJobs(type === "word" || type === "excel" || type === "pptx" ? type : undefined);
   return NextResponse.json({ items });
 }
 

@@ -4,7 +4,7 @@ import path from "path";
 import { SKILLS_DIR } from "./paths";
 import { randomUUID } from "crypto";
 
-export type SkillScope = "global" | "word" | "excel";
+export type SkillScope = "global" | "word" | "excel" | "pptx";
 
 export type Skill = {
   id: string;
@@ -45,6 +45,7 @@ function mapRow(row: Row): Skill {
 }
 
 export function listSkills(scope?: SkillScope, onlyEnabled = false): Skill[] {
+  ensureBuiltinSkills();
   const db = getDb();
   let sql = `SELECT * FROM skills WHERE 1=1`;
   const params: unknown[] = [];
@@ -143,6 +144,31 @@ export function deleteSkill(id: string): boolean {
   }
   getDb().prepare(`DELETE FROM skills WHERE id = ?`).run(id);
   return true;
+}
+
+const PPTX_SKILL_TITLE = "内部汇报 PPT";
+
+function ensureBuiltinSkills() {
+  const db = getDb();
+  const existing = db
+    .prepare(`SELECT id FROM skills WHERE title = ?`)
+    .get(PPTX_SKILL_TITLE) as { id: string } | undefined;
+  if (existing) return;
+
+  const skillFile = path.join(process.cwd(), "skills", "pptx-internal", "SKILL.md");
+  let content = "";
+  try {
+    content = fs.readFileSync(skillFile, "utf8");
+  } catch {
+    content = "内部汇报 PPT：封面 → 要点 → 结论。每页不超过 6 条。";
+  }
+  createSkill({
+    title: PPTX_SKILL_TITLE,
+    description: "内置 Skill：一句话/材料 → 大纲 JSON → 可编辑 pptx（源自 dsh-ppt SOP）",
+    scope: "pptx",
+    content,
+    enabled: true,
+  });
 }
 
 export function buildSkillContext(scope: SkillScope): string {

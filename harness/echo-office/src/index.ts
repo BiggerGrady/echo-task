@@ -106,4 +106,26 @@ export function apply(ctx: Ctx) {
     },
     execute: (args) => callEcho("apply_excel_ops", args),
   });
+
+  ctx.tools.register({
+    name: "outline_pptx",
+    description: "按内部汇报 PPT Skill 生成结构化大纲 JSON（可先改再渲染）。",
+    parameters: {
+      instruction: { type: "string", description: "用户需求，如本周汇报要点" },
+      text: { type: "string", description: "参考材料摘录" },
+      inputFilename: { type: "string", description: "可选：uploads 中的 docx/xlsx" },
+      fileName: { type: "string" },
+    },
+    execute: (args) => callEcho("outline_pptx", args),
+  });
+
+  ctx.tools.register({
+    name: "render_pptx",
+    description: "把大纲 JSON 渲染为可编辑 pptx 并写入 Echo outputs。",
+    parameters: {
+      outline: { type: "object", required: true, description: "PptOutline JSON" },
+      outputBasename: { type: "string" },
+    },
+    execute: (args) => callEcho("render_pptx", args),
+  });
 }

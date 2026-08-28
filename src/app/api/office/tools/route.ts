@@ -9,9 +9,13 @@ import {
   checkCompliance,
   extractDocxText,
   ingestComplianceSource,
+  outlinePptx,
+  parsePptOutline,
   readWorkbookSnapshot,
+  renderPptx,
   writeCommentedDocx,
   type PlannedOp,
+  type PptOutline,
 } from "@/lib/office";
 
 export const runtime = "nodejs";
@@ -36,6 +40,7 @@ export async function POST(req: NextRequest) {
     issues?: Parameters<typeof writeCommentedDocx>[1];
     operations?: PlannedOp[];
     outputBasename?: string;
+    outline?: PptOutline | string;
   };
 
   const tool = body.tool || "";
@@ -107,6 +112,45 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    if (tool === "outline_pptx") {
+      let sourceText = body.text || "";
+      if (!sourceText && body.inputFilename) {
+        const buffer = readUpload(body.inputFilename);
+        const name = (body.fileName || body.inputFilename).toLowerCase();
+        if (name.endsWith(".xlsx")) {
+          sourceText = JSON.stringify(await readWorkbookSnapshot(buffer)).slice(0, 12000);
+        } else {
+          sourceText = await extractDocxText(buffer);
+        }
+      }
+      const result = await outlinePptx({
+        instruction: body.instruction || body.note || "",
+        sourceText,
+      });
+      return NextResponse.json({ ok: true, tool, result });
+    }
+
+    if (tool === "render_pptx") {
+      if (body.outline == null) throw new Error("需要 outline");
+      const raw = typeof body.outline === "string" ? body.outline : JSON.stringify(body.outline);
+      const parsed = parsePptOutline(raw);
+      const buffer = await renderPptx(parsed.outline);
+      const outName = body.outputBasename || `office-${Date.now()}-deck.pptx`;
+      const safeName = path.basename(outName).replace(/\.pptx$/i, "") + ".pptx";
+      fs.mkdirSync(OUTPUTS_DIR, { recursive: true });
+      fs.writeFileSync(path.join(OUTPUTS_DIR, safeName), buffer);
+      return NextResponse.json({
+        ok: true,
+        tool,
+        result: {
+          outputFilename: safeName,
+          title: parsed.outline.title,
+          slideCount: parsed.outline.slides.length,
+          parseOk: parsed.parseOk,
+        },
+      });
+    }
+
     return NextResponse.json(
       {
         error: "未知 tool",
@@ -117,6 +161,8 @@ export async function POST(req: NextRequest) {
           "compliance_check",
           "add_word_comments",
           "apply_excel_ops",
+          "outline_pptx",
+          "render_pptx",
         ],
       },
       { status: 400 }

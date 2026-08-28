@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-type Scope = "global" | "word" | "excel";
+type Scope = "global" | "word" | "excel" | "pptx";
 
 type Item = {
   id: string;
@@ -20,6 +20,7 @@ const SCOPE_LABEL: Record<Scope, string> = {
   global: "全局",
   word: "文档校验",
   excel: "Excel 处理",
+  pptx: "PPT 制作",
 };
 
 type Props = {
@@ -295,6 +296,7 @@ export function ConfigManager({ kind, title, subtitle }: Props) {
               <option value="global">全局</option>
               <option value="word">仅文档校验</option>
               <option value="excel">仅 Excel 处理</option>
+              {kind === "skills" ? <option value="pptx">仅 PPT 制作</option> : null}
             </select>
           </label>
         </div>

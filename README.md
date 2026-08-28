@@ -4,9 +4,9 @@
 
 ## 功能
 
-- **Agent 对话**（主入口 `/chat`）：上传 Word / Excel 或纯文本，流式过程输出，多轮上下文，本轮模型切换，新建对话
-- **处理历史**：每次 Word / Excel 产物可回看下载
-- **参考文档 / Skill**：注入任务上下文
+- **Agent 对话**（主入口 `/chat`）：上传 Word / Excel 或纯文本，流式过程输出，多轮上下文，本轮模型切换，新建对话；支持内部汇报 PPT（一句话 → 大纲 → 可编辑 `.pptx`）
+- **处理历史**：每次 Word / Excel / PPT 产物可回看下载
+- **参考文档 / Skill**：注入任务上下文（内置「内部汇报 PPT」Skill）
 - **模型入口**：DeepSeek（`deepseek-v4-flash` / `deepseek-v4-pro`）
 
 旧入口 `/word`、`/excel` 已重定向到 `/chat`。

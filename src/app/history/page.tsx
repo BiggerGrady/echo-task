@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 
 type Job = {
   id: string;
-  type: "word" | "excel";
+  type: "word" | "excel" | "pptx";
   status: "pending" | "succeeded" | "failed";
   originalName: string;
   inputFilename: string | null;
@@ -16,7 +16,7 @@ type Job = {
   updatedAt: string;
 };
 
-const TYPE_LABEL = { word: "文档校验", excel: "Excel 处理" } as const;
+const TYPE_LABEL = { word: "文档校验", excel: "Excel 处理", pptx: "PPT 制作" } as const;
 const STATUS_LABEL = {
   pending: "处理中",
   succeeded: "成功",
@@ -25,7 +25,7 @@ const STATUS_LABEL = {
 
 export default function HistoryPage() {
   const [items, setItems] = useState<Job[]>([]);
-  const [filter, setFilter] = useState<"all" | "word" | "excel">("all");
+  const [filter, setFilter] = useState<"all" | "word" | "excel" | "pptx">("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -77,7 +77,7 @@ export default function HistoryPage() {
       <header>
         <h1 className="font-display text-4xl text-ink md:text-5xl">处理历史</h1>
         <p className="mt-3 max-w-2xl text-ink-soft/75">
-          每次 Word / Excel 处理都会保存上传原文与结果文件，可随时回看和下载。
+          每次 Word / Excel / PPT 处理都会保存上传原文与结果文件，可随时回看和下载。
         </p>
         <p className="mt-2 text-xs text-ink-soft/55">
           元数据：data/echo.db · 原文：data/uploads/ · 结果：data/outputs/
@@ -85,7 +85,7 @@ export default function HistoryPage() {
       </header>
 
       <div className="flex flex-wrap items-center gap-2">
-        {(["all", "word", "excel"] as const).map((key) => (
+        {(["all", "word", "excel", "pptx"] as const).map((key) => (
           <button
             key={key}
             type="button"
@@ -112,7 +112,7 @@ export default function HistoryPage() {
         <p className="text-sm text-ink-soft/60">加载中…</p>
       ) : items.length === 0 ? (
         <p className="panel rounded-2xl p-6 text-sm text-ink-soft/70">
-          暂无处理记录。去「对话」上传 Word / Excel 跑一次任务后，会自动出现在这里。
+          暂无处理记录。去「对话」上传 Word / Excel，或生成一份 PPT 后，会自动出现在这里。
         </p>
       ) : (
         <section className="space-y-3">

@@ -3,3 +3,5 @@ export { extractDocxText, issuesToComments, parseDocIssues, writeCommentedDocx }
 export { applyExcelOperations, parseExcelPlan, readWorkbookSnapshot } from "./xlsx";
 export { fetchUrlText, ingestComplianceSource, stripHtml } from "./ingest";
 export { checkCompliance } from "./compliance";
+export { outlinePptx, parsePptOutline, renderPptx, fallbackOutline } from "./pptx";
+export type { PptOutline, PptSlide } from "./pptx";

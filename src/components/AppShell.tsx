@@ -22,7 +22,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="mb-8">
             <p className="font-display text-3xl tracking-tight text-ink">Echo Task</p>
             <p className="mt-2 text-sm leading-relaxed text-ink-soft/70">
-              文档与表格智能处理工作台
+              文档、表格与内部汇报 PPT
             </p>
           </div>
           <nav className="flex flex-1 flex-col gap-1">

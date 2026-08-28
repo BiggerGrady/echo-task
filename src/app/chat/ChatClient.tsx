@@ -4,7 +4,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { useSearchParams } from "next/navigation";
 import { MAX_UPLOAD_BYTES } from "@/lib/constants";
 
-type TaskType = "auto" | "word" | "excel" | "chat" | "compliance";
+type TaskType = "auto" | "word" | "excel" | "chat" | "compliance" | "pptx";
 
 type Session = {
   id: string;
@@ -56,7 +56,9 @@ export default function ChatClient() {
   const [type, setType] = useState<TaskType>(
     initialType === "word" ||
       initialType === "excel" ||
-      initialType === "compliance"
+      initialType === "compliance" ||
+      initialType === "pptx" ||
+      initialType === "chat"
       ? initialType
       : "auto"
   );
@@ -281,7 +283,7 @@ export default function ChatClient() {
         <div>
           <h1 className="font-display text-4xl text-ink">对话</h1>
           <p className="mt-1 text-sm text-ink-soft/70">
-            上传 Word / Excel，或直接提问；同一会话保留上下文。
+            上传 Word / Excel 作参考，或直接用一句话生成内部汇报 PPT；同一会话保留上下文。
           </p>
         </div>
         <button
@@ -343,7 +345,7 @@ export default function ChatClient() {
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
             {messages.length === 0 && (
               <div className="flex h-full min-h-[200px] items-center justify-center text-center text-sm text-ink-soft/55">
-                上传 .docx / .xlsx，或输入指令开始对话
+                上传 .docx / .xlsx 作参考，或输入「做一份本周汇报 PPT」开始
               </div>
             )}
             {messages.map((m) => (
@@ -417,6 +419,7 @@ export default function ChatClient() {
                 <option value="word">Word 校验</option>
                 <option value="compliance">合规校验</option>
                 <option value="excel">Excel 处理</option>
+                <option value="pptx">PPT 制作</option>
                 <option value="chat">纯对话</option>
               </select>
               <select
@@ -465,7 +468,11 @@ export default function ChatClient() {
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 rows={2}
-                placeholder="输入指令，例如：校验语法 / 按部门筛选并排序…"
+                placeholder={
+                  type === "pptx"
+                    ? "例如：做一份本周工作汇报 PPT，覆盖进展、风险和下一步…"
+                    : "输入指令，例如：校验语法 / 按部门筛选并排序…"
+                }
                 className="min-h-[56px] flex-1 resize-none rounded-xl border border-[var(--line)] bg-paper/80 px-3 py-2 text-sm outline-none focus:border-celadon"
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {

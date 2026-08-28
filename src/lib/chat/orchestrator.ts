@@ -8,9 +8,11 @@ import {
   applyExcelOperations,
   checkCompliance,
   extractDocxText,
+  outlinePptx,
   parseDocIssues,
   parseExcelPlan,
   readWorkbookSnapshot,
+  renderPptx,
   writeCommentedDocx,
 } from "../office";
 import {
@@ -29,7 +31,7 @@ import {
 import { completeJob, createJob } from "../jobs";
 import { randomUUID } from "crypto";
 
-export type ChatTaskType = "auto" | "word" | "excel" | "chat" | "compliance";
+export type ChatTaskType = "auto" | "word" | "excel" | "chat" | "compliance" | "pptx";
 
 export type ChatEvent =
   | { event: "meta"; data: Record<string, unknown> }
@@ -43,19 +45,21 @@ function inferType(
   fileName?: string,
   explicit?: ChatTaskType,
   message?: string
-): "word" | "excel" | "chat" | "compliance" {
+): "word" | "excel" | "chat" | "compliance" | "pptx" {
   if (explicit && explicit !== "auto") {
     if (
       explicit === "word" ||
       explicit === "excel" ||
       explicit === "chat" ||
-      explicit === "compliance"
+      explicit === "compliance" ||
+      explicit === "pptx"
     ) {
       return explicit;
     }
   }
   const lower = (fileName || "").toLowerCase();
   const msg = message || "";
+  if (/PPT|幻灯片|演示文稿|做\s*ppt|生成.*ppt/i.test(msg)) return "pptx";
   if (lower.endsWith(".docx") && /合规|制度|规范检查/.test(msg)) return "compliance";
   if (lower.endsWith(".docx")) return "word";
   if (lower.endsWith(".xlsx")) return "excel";
@@ -86,11 +90,12 @@ export async function* runChat(input: {
 
   const taskType = inferType(input.file?.name, input.type, input.message);
   const job =
-    input.file && (taskType === "word" || taskType === "excel" || taskType === "compliance")
+    taskType === "pptx" ||
+    (input.file && (taskType === "word" || taskType === "excel" || taskType === "compliance"))
       ? createJob({
-          type: taskType === "compliance" ? "word" : taskType,
-          originalName: input.file.name,
-          inputFilename: input.file.storedName,
+          type: taskType === "compliance" ? "word" : taskType === "pptx" ? "pptx" : taskType,
+          originalName: input.file?.name || `${(input.message || "演示文稿").slice(0, 30)}.pptx`,
+          inputFilename: input.file?.storedName || "",
           instruction: input.message,
         })
       : null;
@@ -426,6 +431,92 @@ ${snapshotPayload}`,
       };
       assistantText =
         (assistantText ? `${assistantText.trim()}\n\n` : "") + `已完成 Excel 处理：${summary}`;
+    } else if (taskType === "pptx") {
+      let sourceText = "";
+      if (input.file) {
+        const lower = input.file.name.toLowerCase();
+        yield { event: "status", data: { stage: "extracting", message: "正在读取参考材料…" } };
+        if (lower.endsWith(".docx")) {
+          sourceText = await extractDocxText(input.file.buffer);
+        } else if (lower.endsWith(".xlsx")) {
+          const snapshot = await readWorkbookSnapshot(input.file.buffer);
+          sourceText = JSON.stringify(snapshot).slice(0, 12000);
+        } else {
+          throw new Error("PPT 参考材料仅支持 .docx 或 .xlsx");
+        }
+      }
+
+      const skills = buildSkillContext("pptx");
+      yield {
+        event: "status",
+        data: { stage: "context", message: "已加载「内部汇报 PPT」Skill" },
+      };
+      yield { event: "status", data: { stage: "streaming", message: "正在策划页序与要点…" } };
+
+      const streamSys: ChatMessage = {
+        role: "system",
+        content: "你是内部汇报 PPT 助手。先用中文说明页序与每页要点（不要输出 JSON）。",
+      };
+      const streamUser: ChatMessage = {
+        role: "user",
+        content: `需求：${input.message || "请做一份内部汇报 PPT"}
+## PPT Skill
+${skills}
+## 参考材料
+${(sourceText || "（无附件，仅按用户需求）").slice(0, 8000)}`,
+      };
+      for await (const chunk of chatCompletionStream(
+        [streamSys, ...history.slice(0, -1), streamUser],
+        { modelOverride: input.model, signal: input.signal }
+      )) {
+        if (chunk.text) {
+          assistantText += chunk.text;
+          yield { event: "delta", data: { text: chunk.text } };
+        }
+      }
+
+      yield { event: "status", data: { stage: "structuring", message: "生成结构化大纲…" } };
+      const outlined = await outlinePptx({
+        instruction: input.message,
+        sourceText,
+        modelOverride: input.model,
+        signal: input.signal,
+      });
+
+      yield { event: "status", data: { stage: "writing", message: "正在渲染可编辑 PPTX…" } };
+      const buffer = await renderPptx(outlined.outline);
+      const safeTitle = outlined.outline.title.replace(/[\\/:*?"<>|]+/g, "_").slice(0, 40) || "presentation";
+      const outputFilename = `${job!.id}-${safeTitle}.pptx`;
+      fs.mkdirSync(OUTPUTS_DIR, { recursive: true });
+      fs.writeFileSync(path.join(OUTPUTS_DIR, outputFilename), buffer);
+
+      const slideCount = outlined.outline.slides.length;
+      const summary = `已生成「${outlined.outline.title}」，共 ${slideCount} 页`;
+      completeJob(job!.id, {
+        status: "succeeded",
+        outputFilename,
+        result: {
+          summary,
+          outline: outlined.outline,
+          slideCount,
+          demo: outlined.demo,
+          parseOk: outlined.parseOk,
+        },
+      });
+
+      resultPayload = {
+        summary,
+        outline: outlined.outline,
+        slideCount,
+        demo: outlined.demo,
+        parseOk: outlined.parseOk,
+        model: outlined.model,
+        downloadUrl: `/api/download/${encodeURIComponent(outputFilename)}?kind=output&jobId=${job!.id}`,
+        jobId: job!.id,
+      };
+      assistantText =
+        (assistantText ? `${assistantText.trim()}\n\n` : "") +
+        `${summary}。可下载后在 PowerPoint / WPS 中继续编辑。`;
     } else {
       // pure chat
       yield { event: "status", data: { stage: "streaming", message: "模型回复中…" } };
@@ -433,7 +524,7 @@ ${snapshotPayload}`,
       const skills = buildSkillContext("global");
       const system: ChatMessage = {
         role: "system",
-        content: `你是 Echo Task 助手，帮助用户处理 Word/Excel 相关问题。可结合参考文档与 Skill。\n## 参考文档\n${references}\n## Skill\n${skills}`,
+        content: `你是 Echo Task 助手，帮助用户处理 Word、Excel 与内部汇报 PPT。可结合参考文档与 Skill。\n## 参考文档\n${references}\n## Skill\n${skills}`,
       };
       for await (const chunk of chatCompletionStream([system, ...history], {
         modelOverride: input.model,

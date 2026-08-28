@@ -68,6 +68,32 @@ function demoComplete(messages: ChatMessage[]): string {
   }
 
   if (
+    system.includes("内部汇报 PPT") ||
+    system.includes("PPT 策划") ||
+    lastUser.includes("## PPT Skill")
+  ) {
+    return JSON.stringify({
+      title: "本周工作汇报（演示）",
+      subtitle: "演示模式生成的大纲，配置 API Key 后可按真实材料策划",
+      slides: [
+        { layout: "cover", title: "本周工作汇报", subtitle: "内部汇报" },
+        {
+          layout: "bullets",
+          title: "本周进展",
+          bullets: ["完成核心需求", "补齐测试用例", "对齐下周计划"],
+        },
+        {
+          layout: "two_column",
+          title: "风险与对策",
+          left: ["外部接口依赖"],
+          right: ["准备降级方案"],
+        },
+        { layout: "closing", title: "谢谢", subtitle: "欢迎讨论" },
+      ],
+    });
+  }
+
+  if (
     system.includes("合规审查") ||
     system.includes("合规 Skill") ||
     lastUser.includes("## 合规 Skill")

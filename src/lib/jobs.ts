@@ -4,7 +4,7 @@ import path from "path";
 import { OUTPUTS_DIR, UPLOADS_DIR } from "./paths";
 import { randomUUID } from "crypto";
 
-export type JobType = "word" | "excel";
+export type JobType = "word" | "excel" | "pptx";
 export type JobStatus = "pending" | "succeeded" | "failed";
 
 export type Job = {
