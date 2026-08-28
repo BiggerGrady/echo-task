@@ -13,7 +13,11 @@ npx @deepseek-ai/dsh web
 
 **不要**把 dsh 端口暴露到 Cloudflare Tunnel。生产入口仍是 Echo `:3000`。
 
-Developer Preview 会破坏性变更。建议记下本次 `npx` 拉到的版本（启动日志 / `npm view @deepseek-ai/dsh version`）。会话存储升级可能不兼容。
+Developer Preview 会破坏性变更。当前 npm `latest`：**@deepseek-ai/dsh@0.1.1-rc.2**（2026-08-21）。GitHub 另有更新的 pre-release 标签（如 v0.1.2-alpha.1）。体验请 pin 版本：
+
+```bash
+npx @deepseek-ai/dsh@0.1.1-rc.2 web
+```
 
 ## 持续开发（H1 / H2）
 
