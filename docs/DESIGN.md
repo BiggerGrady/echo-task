@@ -19,30 +19,32 @@ Echo Task 是本地可运行的文档/表格智能处理工作台：
 
 ---
 
-## 2. 当前现状（截至改版前）
+## 2. 当前现状（截至 Agent Chat Phase 1）
 
 ### 2.1 交互形态
 
-- 分页面表单：`/word`、`/excel`
-- 一次上传 → 一次阻塞式 LLM 调用 → 返回完整 JSON → 下载文件
-- 模型切换只在 `/settings`，处理页不能临时改模型
-- Word 无自然语言指令框；Excel 有指令框，但不是对话
+- 主入口：`/chat`（Agent 对话：流式 SSE、会话上下文、新建对话、本轮模型覆盖）
+- `/word`、`/excel` 重定向到 `/chat?type=word|excel`
+- 全局默认模型仍在 `/settings`；对话内可临时覆盖本轮模型
+- 无 API Key 时 Demo 模式可演示流式 UI
 
 ### 2.2 关键路径
 
 | 能力 | 页面 | API | 核心逻辑 |
 |------|------|-----|----------|
-| Word 校验 | `src/app/word/page.tsx` | `POST /api/word/validate` | `src/lib/documents/word.ts` |
-| Excel 处理 | `src/app/excel/page.tsx` | `POST /api/excel/process` | `src/lib/documents/excel.ts` |
-| LLM | 设置页 | `/api/settings`、`/api/models` | `src/lib/llm/index.ts` |
+| Agent Chat | `src/app/chat/` | `POST /api/chat`（SSE） | `src/lib/chat/orchestrator.ts` |
+| 会话 | 对话侧栏 | `/api/chat/sessions` | `src/lib/chat/sessions.ts` |
+| Word / Excel（兼容） | 重定向 | `POST /api/word/validate`、`/api/excel/process`（deprecated） | `src/lib/documents/*` |
+| LLM | 设置页 + 对话覆盖 | `/api/settings`、`/api/models` | `src/lib/llm/index.ts`（含 stream + 超时） |
 | 历史 | `/history` | `/api/jobs` | `src/lib/jobs.ts` |
+| 访问口令 | `/login` | `/api/auth/*` | `src/lib/auth.ts` + `src/middleware.ts` |
 
-### 2.3 已知缺口
+### 2.3 已知缺口（Phase 2+）
 
-- **无流式输出**（`chat.completions.create` 非 stream）
-- **无 Agent Chat 会话态**（jobs 是单次任务，不是多轮对话）
-- **处理页无法切换模型**
-- Word/Excel 体验割裂，不像「和一个助手协作」
+- 停止生成、会话重命名/搜索
+- 上下文窗口可视化
+- 历史分页与磁盘清理策略
+- API Key 仍明文存 SQLite（外网优先用 `.env.local`）
 
 ---
 
@@ -279,18 +281,18 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 
 ### Phase 1 — 可对话 + 可流式 + 上下文 + 新建对话（优先）
 
-- [ ] 新增 `/chat` 页面与 Composer
-- [ ] `chatCompletionStream` + `/api/chat` SSE
-- [ ] **sessions/messages 落库**；请求时携带本会话历史 messages
-- [ ] **新建对话**按钮（新 session，上下文隔离）
-- [ ] 会话列表（至少能切换最近会话）
-- [ ] Word/Excel 处理：上传+指令 → 流式过程 → 产物下载
-- [ ] 模型下拉覆盖本轮请求
-- [ ] 写入 jobs（兼容现有历史页）
-- [ ] `/word`、`/excel` 跳转 `/chat`
-- [ ] **基础安全**：默认绑定 localhost；可选访问口令（Tunnel 场景）
-- [ ] **可靠调用**：LLM 超时/取消；上传大小限制；截断提示
-- [ ] Demo 模式发送前可见提示
+- [x] 新增 `/chat` 页面与 Composer
+- [x] `chatCompletionStream` + `/api/chat` SSE
+- [x] **sessions/messages 落库**；请求时携带本会话历史 messages
+- [x] **新建对话**按钮（新 session，上下文隔离）
+- [x] 会话列表（至少能切换最近会话）
+- [x] Word/Excel 处理：上传+指令 → 流式过程 → 产物下载
+- [x] 模型下拉覆盖本轮请求
+- [x] 写入 jobs（兼容现有历史页）
+- [x] `/word`、`/excel` 跳转 `/chat`
+- [x] **基础安全**：默认绑定 localhost；可选访问口令（Tunnel 场景）
+- [x] **可靠调用**：LLM 超时/取消；上传大小限制；截断提示
+- [x] Demo 模式发送前可见提示
 
 ### Phase 2 — 会话体验增强
 
@@ -383,21 +385,252 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 
 ---
 
-## 10. 文档与代码同步清单
+## 11. DeepSeek Harness 接入设计（2026-08-28）
+
+> 目标：在「日常办公多场景 Agent」方向上，明确 Harness **是否用、怎么用、先写什么代码、哪些用自然语言**。  
+> 结论：**不替换**现有 Echo Task Next.js 主产品；以 **sidecar + 文档工具插件包** 方式接入，把可复用能力沉淀为 Tools。
+
+### 11.1 Harness 近期更新（相对 2026-08-11 讨论时）
+
+| 时间 | 版本 | 对 Echo Task 的含义 |
+|------|------|---------------------|
+| 08-13 | v0.1 公开 | 开发者预览；`npx @deepseek-ai/dsh web`；一切皆插件 |
+| 08-17 | v0.1.0-rc.7 | 插件可注册设置页；Code mode → **PTC mode**；DeepSeek `low` 推理力度 |
+| 08-19 | v0.1.0-rc.8 | **多模态图片**；Claude Code/Codex 可作子代理 Bundle；**SQLite 会话存储格式不兼容** |
+| 08-21 | v0.1.1-rc.1/rc.2 | `DeepSeek-V4-Flash-Vision-Exp`；沙箱逃逸修复；图片 Files API |
+| 08-27 | **v0.1.2-alpha.1**（当前最新） | 子代理可选模型；ACP 能力补齐；公网 Web 需一次性 token；Headless stderr 进度 / stdout 终态；**明确未做安全审计** |
+
+仍处于 **Developer Preview**：插件 API / 存储可能破坏性变更；**不要把 Harness 当生产唯一依赖**。适合实验台 + 工具预研，稳定业务仍走 Echo Task 自研编排。
+
+官方入口：
+
+- 站点：https://www.deepseek.com/harness/
+- 仓库：https://github.com/deepseek-ai/deepseek-harness
+- 文档：https://deepseek-harness.github.io/deepseek-harness/
+
+### 11.2 产品定位（日常工作 → Agent）
+
+用户日常不是「只有 Word/Excel 两个按钮」，而是一篮子任务：
+
+| 场景 | 典型一句话 | 主要产物 |
+|------|------------|----------|
+| 写报告 | 「根据这两份材料和上周数据，起草周报」 | `.docx` / `.md` |
+| 写 PPT | 「把报告改成 8 页汇报稿大纲，再生成 pptx」 | `.pptx` |
+| 语法/质量校验 | 「校对这篇，问题打批注」 | 带批注 `.docx` |
+| 合规校验 | 「按《××规范》查缺漏、敏感词、格式」 | 批注 + 合规清单 |
+| Excel 分析 | 「按部门汇总，找出异常，出结论」 | 分析说明 + 可选 `.xlsx` |
+| Excel 处理 | 「筛选研发、排序、另存」 | 处理后 `.xlsx` |
+
+**产品叙事**：Echo Task = 本机「办公文档 Agent 工作台」；Harness = 可选的 **Agent 运行时实验层**，用来跑多步工具循环与 Trajectory；主站仍负责上传、历史、鉴权、下载。
+
+### 11.3 推荐架构：Sidecar，不整仓替换
+
+```text
+用户
+ ├─ Echo Task Web（Next.js，:3000）     ← 主入口：会话 UI、鉴权、jobs、下载
+ │     POST /api/chat 或 /api/agent/*
+ │
+ ├─ 路径 A（默认，稳）
+ │     Echo Orchestrator（现有）
+ │     → DeepSeek Chat API
+ │     → 自研 Word/Excel 逻辑 → data/outputs
+ │
+ └─ 路径 B（实验 / 复杂多步，可选）
+       DeepSeek Harness（dsh，:3080 或 headless）
+       → Profile: echo-office
+       → Tools 插件（封装同一套文档库）
+       → Trajectory 可回放
+       → 产物回写 data/outputs，经 Echo 下载
+```
+
+| 决策 | 选择 | 原因 |
+|------|------|------|
+| 是否 fork 进 monorepo 替换 Next | **否** | Preview 变更快；你们已有 Chat/鉴权/落盘 |
+| 是否直接 `npx dsh web` 当唯一产品 | **否**（可作个人试用） | 默认偏编码 Agent；缺业务下载/历史/Tunnel 口令 |
+| 是否写 dsh 插件包 | **是（Phase H）** | 把业务能力变成 Tools，Harness 与 Echo 都能调同一实现 |
+| 进程关系 | Mac Mini 上 **两进程** 或按需启 headless | Tunnel 仍指 Echo；dsh 默认仅 localhost |
+
+### 11.4 开发分工：代码 vs 自然语言
+
+| 层级 | 形态 | 谁写 | 例子 |
+|------|------|------|------|
+| **Tools** | **TypeScript 代码** | 开发者 | `extract_docx`、`add_comments`、`analyze_xlsx`、`render_pptx` |
+| **Skills / 系统提示** | **自然语言 + 少量结构化** | 业务/开发者 | 「周报结构」「合规检查清单」「PPT 页序规范」 |
+| **Profile / patch** | YAML 配置 | 开发者 | 文档模式只挂办公 tools，禁用任意 shell 或收紧审批 |
+| **护栏** | 配置 + 策略代码 | 开发者 | 工作目录、上传上限、审批改文件、超时 |
+
+原则：**场景用自然语言描述；能力用代码实现；同一 Tool 服务多个场景。**
+
+### 11.5 工具清单（按场景，优先复用）
+
+#### A. 已有 / 易从 Echo Task 抽出（先做）
+
+| Tool | 代码来源 | 服务场景 |
+|------|----------|----------|
+| `extract_docx_text` | `documents/word` + mammoth | 报告、校对、合规 |
+| `add_word_comments` | `word-comments` | 校对、合规 |
+| `read_xlsx_snapshot` | `documents/excel` | 分析、处理、写报告取材 |
+| `apply_excel_ops` | excel operations | 表格处理 |
+| `list_references` / `get_skill` | references/skills | 全场景规范注入 |
+| `save_output` | paths + jobs | 统一落盘与历史 |
+
+#### B. 日常新增（第二批）
+
+| Tool | 说明 | 场景 |
+|------|------|------|
+| `draft_docx` | 按大纲/模板生成或改写 docx | 写报告 |
+| `compliance_check` | 规则表 + LLM：缺项/敏感词/格式 → issues JSON | 合规校验 |
+| `analyze_xlsx` | 统计、分组、异常点 → 结构化结论（可不改表） | Excel 分析 |
+| `outline_pptx` | 只出幻灯片大纲 JSON（页标题/要点） | 写 PPT（MVP） |
+| `render_pptx` | 大纲 → `.pptx`（可用 pptxgenjs 等） | 写 PPT |
+| `merge_sources` | 多文件摘录合并为写作上下文 | 报告/PPT |
+
+#### C. 明确后置 / 慎用
+
+| 能力 | 建议 |
+|------|------|
+| 任意 `bash` / 全盘写文件 | 文档 Profile **默认关闭或强审批** |
+| 视觉模型读截图/扫描件 | 可用 V4-Flash-Vision；合规扫描件场景再开 |
+| Claude Code / Codex 子代理 | 与办公主路径无关，可不装 |
+
+### 11.6 Skills（自然语言）示例
+
+放在 Echo `skills/` 或 dsh skill 插件，**不替代 Tools**：
+
+- `skill-weekly-report`：周报章节、语气、必须引用数据表字段  
+- `skill-compliance-公文`：条款清单、禁止表述、格式红线  
+- `skill-pptx-internal`：页数上限、每页要点数、封面/目录/结尾  
+- `skill-excel-anomaly`：何谓异常、如何表述结论  
+
+Agent 流程期望：
+
+```text
+用户目标 →（Skill 约束）→ 选 Tools → 多步执行 → 产物 + 摘要
+（Harness 下另有 Trajectory；Echo 下用 SSE status/delta/result）
+```
+
+### 11.6.1 从 URL / 文案生成「合规 Skill」（明确支持）
+
+**可以。** 合规 Skill 的原料往往是：制度链接、国标/行标摘要页、内网规范粘贴文案、已有 Word/PDF 摘录。产品应支持「输入 → 整理成可启用 Skill」，而不是让用户手写整篇提示词。
+
+#### 输入
+
+| 来源 | 处理 |
+|------|------|
+| **URL** | 服务端抓取正文（可读提取；失败则提示用户粘贴） |
+| **粘贴文案** | 直接作为原料 |
+| **上传规范文件**（可选） | `.docx`/`.txt`/`.md` 抽文本，走同一整理管线 |
+| **补充说明**（可选） | 适用范围、行业、检查松紧（严格/常规） |
+
+#### 输出（写入现有 `skills` 表的 `content`）
+
+建议固定结构（便于 `compliance_check` / 批注复用）：
+
+```markdown
+# 合规 Skill：{标题}
+## 适用范围
+## 必须检查项（可勾选清单）
+## 禁止 / 敏感表述
+## 格式与结构要求
+## 输出要求（批注口径、严重级别）
+## 来源与版本
+- source_url / 粘贴摘要
+- fetched_at / 人工确认状态：draft|reviewed
+```
+
+流程：
+
+```text
+URL 或文案
+  → 抓取/清洗正文
+  → LLM 整理为上述结构（json 或 markdown）
+  → UI 预览，人工可编辑
+  → 保存为 Skill（默认 enabled=false 或 draft）
+  → 启用后注入校对/合规任务
+```
+
+#### 代码 vs 自然语言
+
+| 部分 | 形态 |
+|------|------|
+| 抓取 URL、清洗、落库、版本字段 | **代码**（Tool / API，如 `ingest_compliance_source`、`save_skill_draft`） |
+| 「把制度整理成检查清单」 | **LLM + 自然语言指令**（整理用 system prompt） |
+| 最终 Skill 正文 | **自然语言（结构化）**，人工可改 |
+
+#### 产品约束（合规场景必加）
+
+1. **必须人工确认**：自动生成默认 `draft`，启用前要审一遍（法规不能盲信模型）  
+2. **保留来源**：`source_url`、抓取时间、原文摘要哈希，便于审计与更新  
+3. **版权与内网**：外网 URL 注意条款；内网链接可能抓不到，需支持粘贴/上传兜底  
+4. **更新**：同一来源可「重新整理」生成新版本，旧 Skill 停用而非静默覆盖  
+
+#### 落地位置
+
+- **Echo Task 优先**：`/skills` 增加「从链接/文案生成」；API 如 `POST /api/skills/ingest`  
+- **Harness**：同一整理逻辑可封成 tool，在办公 profile 里调用  
+- 分期归入 **H4 前后**：不阻塞 Chat Phase 1；有合规需求时可先做「仅粘贴文案 → 生成 Skill」，URL 抓取第二步  
+
+#### 一句话验收
+
+用户贴制度链接或文案 → 得到可编辑的合规 Skill 草稿 → 确认启用 → 对文档跑合规/批注时能按清单检查。
+
+### 11.7 接入分期（Harness = Phase H，与 Chat Phase 并行）
+
+| 阶段 | 做什么 | 产出 | 风险 |
+|------|--------|------|------|
+| **H0 体验** | 本机 `npx @deepseek-ai/dsh web`，固定版本笔记；不接业务 | 团队对 Trajectory/PTC 有体感 | 低 |
+| **H1 抽库** | 把 Word/Excel/落盘抽成 `packages/office-core`（或 `src/lib/office/*`），Echo 与未来 dsh 插件共用 | 一份代码两处可调 | 中 |
+| **H2 插件** | 做 `@echo-task/dsh-office` bundle：注册 A 类 tools；`echo-office` profile 裁剪编码工具 | `dsh web --patch` 能校对/改表 | 中高（API 变） |
+| **H3 桥接** | Echo「高级 Agent」开关 → headless/ACP 调 dsh；产物回 `jobs` | 复杂多步走 Harness，简单单步仍走 Orchestrator | 高 |
+| **H4 扩展** | `draft_docx` / `compliance_check` / `outline_pptx`+`render_pptx` / `analyze_xlsx` | 覆盖报告·PPT·合规·分析 | 中 |
+
+**当前建议执行序**：先完成/巩固 Echo Chat Phase 1 → **H0+H1** → 有余力再 H2；未稳定前不要 H3 作为默认路径。
+
+### 11.8 与「只做自然语言」的边界
+
+| 说法 | 对不对 |
+|------|--------|
+| 「把场景写成 Prompt 就能出报告/PPT」 | **不够**；生成/改文件必须有 Tool 代码 |
+| 「每个场景都要重写一套系统」 | **错**；场景差在 Skill，能力差在 Tool |
+| 「Harness 装上就自动会做合规」 | **错**；合规规则与 `compliance_check` 要你们定义 |
+
+### 11.9 验收（Harness 实验路径）
+
+1. H0：本机 dsh 能用 DeepSeek Key 完成一次本地文件任务并看到 Trajectory  
+2. H1：Echo 与插件调用同一 `add_word_comments` 实现，产物一致  
+3. H2：仅办公 tools 的 profile 下，自然语言完成「校对 docx + 筛选 xlsx」  
+4. H3（可选）：Echo UI 触发的一次 headless 任务能在历史页下载结果  
+5. 升级 dsh 小版本后插件仍能加载（或有明确 pin 版本说明）
+
+### 11.10 风险（Harness 专表）
+
+| 风险 | 对策 |
+|------|------|
+| Preview 破坏性变更 / 会话库不兼容 | pin 版本；业务会话仍以 Echo SQLite 为准 |
+| 沙箱未审计 | 文档 Profile 收紧工具；外网 Tunnel 不直接暴露 dsh |
+| 默认编码 Agent 过权 | 自定义 preset，去掉或审批 shell |
+| 双系统心智负担 | UI 默认只暴露 Echo；Harness 标「实验」 |
+
+---
+
+## 12. 文档与代码同步清单
 
 每次改动请核对：
 
-- [ ] 更新本文「现状 / 方案 / 分期 / Review / 变更日志」
+- [ ] 更新本文「现状 / 方案 / 分期 / Review / Harness / 变更日志」
 - [ ] 若影响部署，更新 `DEPLOY.md`
 - [ ] 若影响启动脚本，更新 `README.md`
 - [ ] 新增环境变量时更新 `.env.example`
 
 ---
 
-## 11. 变更日志
+## 13. 变更日志
 
 | 日期 | 作者 | 摘要 |
 |------|------|------|
+| 2026-08-28 | Cursor Agent | §11.6.1：支持从 URL/文案/规范文件生成合规 Skill（草稿→人工确认→启用），明确代码抓取与 LLM 整理分工 |
+| 2026-08-28 | Cursor Agent | 增补 §11：Harness 更新至 v0.1.2-alpha.1；日常办公多场景 sidecar 接入设计、Tools/Skills 分工与 H0–H4 分期 |
+| 2026-08-11 | Cursor Agent | Phase 1 落地：`/chat` SSE、会话上下文、新建对话、口令鉴权、下载需 jobId、上传限额、LLM 超时、localhost 绑定；更新 README/DEPLOY |
 | 2026-08-11 | Cursor Agent | Review：补充 P0/P1/P2 优化清单，调整风险与验收（鉴权、超时、截断提示等） |
 | 2026-08-11 | Cursor Agent | 确认 DeepSeek 支持多轮 messages 上下文；将「会话上下文 + 新建对话」提升为 Phase 1 必做 |
 | 2026-08-11 | Cursor Agent | 初版：确立 Agent Chat + 流式输出改版方向、架构、分期与维护约定 |
